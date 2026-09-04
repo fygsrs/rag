@@ -1,0 +1,27 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Environments / Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Temp / runtime
+temp-files/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
