@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+import zipfile
 from pathlib import Path
 
 import requests
@@ -127,11 +128,28 @@ class NodePDFToMD(BaseNode):
                 time.sleep(poll_interval)
 
 
-
-
-
     def download_and_extract(self, zip_url, output_dir_obj, stem):
-        pass
+        logging.info("download and extract")
+        response = requests.get(zip_url)
+        if response.status_code != 200:
+            raise FileProcessingError(message=f"获取下载文件失败:{response.text}")
+        zip_save_path = output_dir_obj / f"{stem}.zip"
+        with open(zip_save_path, 'wb') as f:
+            f.write(response.content)
+        extract_target_dir =  output_dir_obj / stem
+        extract_target_dir.mkdir(parents=True,exist_ok=True)
+        #解压
+        with zipfile.ZipFile(zip_save_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_target_dir)
+
+        self.logger.info(f"【md重命名】开始")
+        target_md_file = extract_target_dir / "full.md"
+        name = target_md_file.with_name(f"{stem}.md")
+        target_md_file.rename(name)
+        self.logger.info(f"【md重命名】结束")
+
+        return str(name.absolute())
+
 
 if "__main__" == __name__:
     setup_logging()
