@@ -30,6 +30,11 @@ class NodeEntry(BaseNode):
         else:
             raise FileProcessingError(message=f"不支持的文件格式:{import_file_path}")
         state["file_title"] = import_file_path_obj.stem
-        state["file_dir"] = "output"
+        #创建目录
+        project_root = Path(__file__).resolve().parents[3]
+        output_dir = project_root / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        state["file_dir"] = str(output_dir)
         return state
 

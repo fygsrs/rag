@@ -1,27 +1,54 @@
-# IDE
-.idea/
-.vscode/
-*.iml
-
-# Python
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
-*.egg-info/
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.conda/
 .venv/
 venv/
+env/
 
-# Environments / Secrets
+# Environment variables and local secrets
 .env
 .env.*
 !.env.example
-*.pem
-*.key
-*.p12
 
-# Temp / runtime
-temp-files/
+# Packaging and build output
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# IDE and editor settings
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs and temporary files
 *.log
+logs/
+tmp/
+temp/
 
-# OS
+# Local RAG indexes and generated output
+.cache/
+chroma_db/
+vector_db/
+storage/
+output/
+
+# Operating-system files
 .DS_Store
 Thumbs.db
+Desktop.ini
