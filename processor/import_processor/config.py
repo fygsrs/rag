@@ -29,22 +29,12 @@ class ImportConfig:
     )
 
     # ==================== LLM 配置 ====================
-    openai_api_base: str = field(
-        default_factory=lambda: os.getenv("OPENAI_API_BASE", "")
-    )
-    openai_api_key: str = field(
-        default_factory=lambda: os.getenv("OPENAI_API_KEY", "")
-    )
     vl_model: str = field(
         default_factory=lambda: os.getenv("VL_MODEL", "")
     )
     item_model: str = field(
         default_factory=lambda: os.getenv("ITEM_MODEL", "")
     )
-    default_model: str = field(
-        default_factory=lambda: os.getenv("MODEL", "")
-    )
-
     # ==================== Milvus 配置 ====================
     milvus_url: str = field(
         default_factory=lambda: os.getenv("MILVUS_URL", "")
@@ -55,11 +45,6 @@ class ImportConfig:
     item_name_collection: str = field(
         default_factory=lambda: os.getenv("ITEM_NAME_COLLECTION", "")
     )
-    entity_name_collection: str = field(
-        default_factory=lambda: os.getenv("ENTITY_NAME_COLLECTION", "")
-    )
-
-
     # ==================== MinIO 配置 ====================
     minio_endpoint: str = field(
         default_factory=lambda: os.getenv("MINIO_ENDPOINT", "")

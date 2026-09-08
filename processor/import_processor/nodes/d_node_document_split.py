@@ -222,7 +222,6 @@ class NodeDocumentSplit(BaseNode):
         output_path = Path(file_dir) / f"{file_title}_chunks.json"
         payload = {
             "file_title": file_title,
-            "task_id": state.get("task_id", ""),
             "chunks": sections,
         }
         output_path.write_text(

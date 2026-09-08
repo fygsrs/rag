@@ -36,10 +36,6 @@ class ImportGraphState(TypedDict, total=False):
 
     """
 
-    # ==================== 任务标识 ====================
-
-    task_id: str  # 任务 ID，用于任务追踪(web交互的时候用到，实时看到节点的处理日志)
-
     # ==================== 控制标志 ====================
 
     is_md_read_enabled: bool  # 是否启用 MD 读取
@@ -74,9 +70,6 @@ class ImportGraphState(TypedDict, total=False):
 
 
 GRAPH_DEFAULT_STATE: ImportGraphState = {
-
-    "task_id": "",
-
     "is_pdf_read_enabled": False,
 
     "is_md_read_enabled": False,
@@ -111,7 +104,7 @@ def create_default_state(**overrides) -> ImportGraphState:
         新的状态实例
 
     Examples:
-        >>> state = create_default_state(task_id="task_001", local_file_path="doc.pdf")
+        >>> state = create_default_state(import_file_path="doc.pdf")
     """
     state = copy.deepcopy(GRAPH_DEFAULT_STATE)
     state.update(overrides)
