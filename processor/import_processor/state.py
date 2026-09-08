@@ -13,6 +13,16 @@ from typing import TypedDict, List
 import copy
 
 
+class ChunkDict(TypedDict):
+    """单个切片的统一结构。"""
+
+    file_title: str  # 文档标题
+    title: str  # 所属章节标题（去 # 后的文本，无标题时用文档标题）
+    content: str  # 切片正文（含标题行）
+    order: int  # 文档内顺序（1 起）
+    metadata: dict  # 预留：主体名、标签、图片URL等
+
+
 class ImportGraphState(TypedDict, total=False):
 
 
@@ -56,7 +66,7 @@ class ImportGraphState(TypedDict, total=False):
 
     md_content: str  # Markdown 文档内容
 
-    chunks: List  # 文档切片列表
+    chunks: List[ChunkDict]  # 文档切片列表（结构化，见 ChunkDict）
 
     # ==================== 默认状态 ====================
 

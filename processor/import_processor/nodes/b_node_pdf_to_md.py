@@ -155,7 +155,7 @@ if "__main__" == __name__:
     setup_logging()
 
     state ={
-        "pdf_path": r"E:\code\py\掌柜智库课件0525\掌柜智库课件0525\2.资料\04-设备手册汇总\doc\hak180产品安全手册.pdf",
+        "pdf_path": r"",
         "file_dir": "E:/code/py/rag/output",
     }
     node =  NodePDFToMD()

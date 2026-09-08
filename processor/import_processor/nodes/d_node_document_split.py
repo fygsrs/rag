@@ -1,8 +1,12 @@
+import json
 import re
+from pathlib import Path
+
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from processor.import_processor.base import BaseNode
 from processor.import_processor.exceptions import DocumentSplitError, StateFieldError
-from processor.import_processor.state import ImportGraphState
+from processor.import_processor.state import ChunkDict, ImportGraphState
 
 
 class NodeDocumentSplit(BaseNode):
@@ -10,9 +14,7 @@ class NodeDocumentSplit(BaseNode):
 
     name = "node_document_split"
     _TITLE_PATTERN = re.compile(r"^\s{0,3}#{1,6}(?:\s+|$)")
-    _SENTENCE_BOUNDARY_PATTERN = re.compile(
-        r"(?<=[。！？!?；;])|(?<=\.)(?=\s|$)"
-    )
+    _SEPARATORS = ["\n\n", "\n", "。", "！", "？", "；", " ", ""]
 
     def process(self, state: ImportGraphState):
         self.logger.info("%s节点开始执行...", self.name)
@@ -73,14 +75,21 @@ class NodeDocumentSplit(BaseNode):
         self,
         content: str,
         file_title: str = "",
-    ) -> tuple[list[str], int, int]:
+    ) -> tuple[list[ChunkDict], int, int]:
         """按 Markdown ATX 标题切分，忽略代码块中的 ``#``。"""
-        del file_title  # 保留参数以对应 process 中清晰的步骤接口。
         lines = content.splitlines()
-        sections: list[str] = []
+        sections: list[ChunkDict] = []
         current_lines: list[str] = []
+        current_title = file_title
         title_count = 0
         fence_marker: str | None = None
+
+        def flush() -> None:
+            nonlocal current_lines
+            text = "\n".join(current_lines).strip()
+            if text:
+                sections.append(self._make_chunk(file_title, current_title, text))
+            current_lines = []
 
         for line in lines:
             stripped = line.lstrip()
@@ -98,31 +107,46 @@ class NodeDocumentSplit(BaseNode):
             )
             if is_title:
                 title_count += 1
-                self._append_section(sections, current_lines)
+                flush()
                 current_lines = [line.rstrip()]
+                current_title = self._extract_title_text(line) or file_title
             else:
                 current_lines.append(line.rstrip())
 
-        self._append_section(sections, current_lines)
+        flush()
         return sections, title_count, len(lines)
 
     def _step_3_handle_no_title(
         self,
         content: str,
-        sections: list[str],
+        sections: list[ChunkDict],
         title_count: int,
         file_title: str,
-    ) -> list[str]:
+    ) -> list[ChunkDict]:
         """为无标题文档及首个标题前的正文补充文档标题。"""
         default_title = f"# {file_title}"
         if title_count == 0:
-            return [f"{default_title}\n\n{content.strip()}"]
+            return [
+                self._make_chunk(
+                    file_title,
+                    file_title,
+                    f"{default_title}\n\n{content.strip()}",
+                )
+            ]
 
-        if sections and not self._TITLE_PATTERN.match(sections[0].splitlines()[0]):
-            sections[0] = f"{default_title}\n\n{sections[0]}"
+        if sections and not self._TITLE_PATTERN.match(
+            sections[0]["content"].splitlines()[0]
+        ):
+            first = sections[0]
+            sections[0] = self._make_chunk(
+                file_title,
+                first["title"] or file_title,
+                f"{default_title}\n\n{first['content']}",
+                metadata=first.get("metadata"),
+            )
         return sections
 
-    def _step_4_refine_chunks(self, sections: list[str]) -> list[str]:
+    def _step_4_refine_chunks(self, sections: list[ChunkDict]) -> list[ChunkDict]:
         """拆分超长片段，并在不超过上限的前提下合并短片段。"""
         max_length = self.config.max_content_length
         min_length = self.config.min_content_length
@@ -137,19 +161,40 @@ class NodeDocumentSplit(BaseNode):
                 node_name=self.name,
             )
 
-        refined: list[str] = []
+        refined: list[ChunkDict] = []
         for section in sections:
-            refined.extend(self._split_section(section, max_length))
+            if len(section["content"]) <= max_length:
+                refined.append(section)
+                continue
+            for text in self._split_section(section["content"], max_length):
+                refined.append(
+                    self._make_chunk(
+                        section["file_title"],
+                        section["title"],
+                        text,
+                        metadata=section.get("metadata"),
+                    )
+                )
 
-        return self._merge_short_chunks(refined, min_length, max_length)
+        merged = self._merge_short_chunks(refined, min_length, max_length)
+        return [
+            self._make_chunk(
+                chunk["file_title"],
+                chunk["title"],
+                chunk["content"],
+                order=index + 1,
+                metadata=chunk.get("metadata"),
+            )
+            for index, chunk in enumerate(merged)
+        ]
 
     def _step_5_print_stats(
         self,
         lines_count: int,
-        sections: list[str],
+        sections: list[ChunkDict],
     ) -> None:
         """记录切分数量及长度统计。"""
-        lengths = [len(section) for section in sections]
+        lengths = [len(section["content"]) for section in sections]
         if not lengths:
             self.logger.info("文档共 %d 行，未生成切片", lines_count)
             return
@@ -165,16 +210,46 @@ class NodeDocumentSplit(BaseNode):
     @staticmethod
     def _step_6_backup(
         state: ImportGraphState,
-        sections: list[str],
+        sections: list[ChunkDict],
     ) -> None:
-        """将切分结果写回流程状态。"""
+        """将切分结果写回流程状态，并导出 JSON 备份。"""
         state["chunks"] = sections
 
+        file_title = state.get("file_title", "")
+        file_dir = state.get("file_dir", "")
+        if not file_dir:
+            return
+        output_path = Path(file_dir) / f"{file_title}_chunks.json"
+        payload = {
+            "file_title": file_title,
+            "task_id": state.get("task_id", ""),
+            "chunks": sections,
+        }
+        output_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
     @staticmethod
-    def _append_section(sections: list[str], lines: list[str]) -> None:
-        section = "\n".join(lines).strip()
-        if section:
-            sections.append(section)
+    def _make_chunk(
+        file_title: str,
+        title: str,
+        content: str,
+        order: int = 0,
+        metadata: dict | None = None,
+    ) -> ChunkDict:
+        return {
+            "file_title": file_title,
+            "title": title,
+            "content": content,
+            "order": order,
+            "metadata": dict(metadata) if metadata else {},
+        }
+
+    @staticmethod
+    def _extract_title_text(line: str) -> str:
+        """去掉标题行开头的 ``#`` 标记，返回纯标题文本。"""
+        return re.sub(r"^#+\s*", "", line).strip()
 
     def _split_section(self, section: str, max_length: int) -> list[str]:
         section = section.strip()
@@ -193,120 +268,70 @@ class NodeDocumentSplit(BaseNode):
 
         prefix = f"{heading}\n\n" if heading else ""
         body_limit = max_length - len(prefix)
+        chunk_size = max_length if body_limit <= 0 else body_limit
+        chunk_overlap = min(self.config.chunk_overlap, max(0, chunk_size - 1))
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            separators=self._SEPARATORS,
+            length_function=len,
+        )
         if body_limit <= 0:
-            # 极端的超长标题无法与正文同时容纳，标题自身单独作为一个切片。
-            return self._hard_split(section, max_length)
+            # 极端的超长标题无法与正文同时容纳，对整段硬切。
+            return [chunk for chunk in splitter.split_text(section) if chunk.strip()]
 
-        body_chunks = self._split_body(body, body_limit)
+        body_chunks = splitter.split_text(body)
         return [f"{prefix}{chunk}".strip() for chunk in body_chunks if chunk.strip()]
 
-    def _split_body(self, body: str, limit: int) -> list[str]:
-        """先按段落装箱，单个超长段落再按句子切分。"""
-        paragraphs = [part.strip() for part in re.split(r"\n\s*\n", body)]
-        paragraphs = [part for part in paragraphs if part]
-        chunks: list[str] = []
-        current = ""
-
-        for paragraph in paragraphs:
-            parts = (
-                [paragraph]
-                if len(paragraph) <= limit
-                else self._split_long_paragraph(paragraph, limit)
-            )
-            for part in parts:
-                candidate = f"{current}\n\n{part}" if current else part
-                if len(candidate) <= limit:
-                    current = candidate
-                else:
-                    if current:
-                        chunks.append(current)
-                    current = part
-
-        if current:
-            chunks.append(current)
-        return chunks
-
-    def _split_long_paragraph(self, paragraph: str, limit: int) -> list[str]:
-        sentences = [
-            sentence.strip()
-            for sentence in self._SENTENCE_BOUNDARY_PATTERN.split(paragraph)
-            if sentence.strip()
-        ]
-        if len(sentences) <= 1:
-            return self._hard_split(paragraph, limit)
-
-        chunks: list[str] = []
-        current_sentences: list[str] = []
-        overlap_count = max(0, self.config.overlap_sentences)
-
-        for sentence in sentences:
-            if len(sentence) > limit:
-                if current_sentences:
-                    chunks.append("".join(current_sentences))
-                    current_sentences = []
-                chunks.extend(self._hard_split(sentence, limit))
-                continue
-
-            candidate = "".join([*current_sentences, sentence])
-            if current_sentences and len(candidate) > limit:
-                chunks.append("".join(current_sentences))
-                current_sentences = self._overlap_tail(
-                    current_sentences,
-                    overlap_count,
-                    limit - len(sentence),
-                )
-            current_sentences.append(sentence)
-
-        if current_sentences:
-            chunks.append("".join(current_sentences))
-        return chunks
-
-    @staticmethod
-    def _overlap_tail(
-        sentences: list[str],
-        count: int,
-        available_length: int,
-    ) -> list[str]:
-        if count <= 0 or available_length <= 0:
-            return []
-        tail = sentences[-count:]
-        while tail and len("".join(tail)) > available_length:
-            tail.pop(0)
-        return tail
-
-    @staticmethod
-    def _hard_split(text: str, limit: int) -> list[str]:
-        return [text[index : index + limit] for index in range(0, len(text), limit)]
-
-    @staticmethod
     def _merge_short_chunks(
-        chunks: list[str],
+        self,
+        chunks: list[ChunkDict],
         min_length: int,
         max_length: int,
-    ) -> list[str]:
+    ) -> list[ChunkDict]:
         if min_length == 0:
             return chunks
 
-        merged: list[str] = []
+        merged: list[ChunkDict] = []
         index = 0
         while index < len(chunks):
-            current = chunks[index].strip()
+            current = chunks[index]
             if (
-                len(current) < min_length
+                len(current["content"]) < min_length
                 and index + 1 < len(chunks)
-                and len(current) + 2 + len(chunks[index + 1].strip()) <= max_length
+                and current["title"] == chunks[index + 1]["title"]
+                and len(current["content"])
+                + 2
+                + len(chunks[index + 1]["content"])
+                <= max_length
             ):
-                current = f"{current}\n\n{chunks[index + 1].strip()}"
+                current = self._concat_chunks(current, chunks[index + 1])
                 index += 1
 
             if (
-                len(current) < min_length
+                len(current["content"]) < min_length
                 and merged
-                and len(merged[-1]) + 2 + len(current) <= max_length
+                and merged[-1]["title"] == current["title"]
+                and len(merged[-1]["content"]) + 2 + len(current["content"])
+                <= max_length
             ):
-                merged[-1] = f"{merged[-1]}\n\n{current}"
-            elif current:
+                merged[-1] = self._concat_chunks(merged[-1], current)
+            elif current["content"]:
                 merged.append(current)
             index += 1
 
         return merged
+
+    @staticmethod
+    def _concat_chunks(left: ChunkDict, right: ChunkDict) -> ChunkDict:
+        """拼接两个同标题的切片，字段继承左侧，metadata 取并集。"""
+        metadata = dict(left.get("metadata") or {})
+        for key, value in (right.get("metadata") or {}).items():
+            metadata.setdefault(key, value)
+        return {
+            "file_title": left["file_title"],
+            "title": left["title"],
+            "content": f"{left['content']}\n\n{right['content']}",
+            "order": 0,
+            "metadata": metadata,
+        }
