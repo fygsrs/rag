@@ -23,6 +23,14 @@ class ChunkDict(TypedDict):
     metadata: dict  # 预留：主体名、标签、图片URL等
 
 
+class EmbeddedChunkDict(ChunkDict, total=False):
+    """向量化后的切片；保留 ChunkDict 原有五字段不变。"""
+
+    dense_vector: list[float]
+    sparse_vector: dict[int, float]
+    chunk_id: int
+
+
 class ImportGraphState(TypedDict, total=False):
 
 
@@ -62,7 +70,7 @@ class ImportGraphState(TypedDict, total=False):
 
     md_content: str  # Markdown 文档内容
 
-    chunks: List[ChunkDict]  # 文档切片列表（结构化，见 ChunkDict）
+    chunks: List[EmbeddedChunkDict]  # 文档切片，可在后续节点补充向量和 ID
 
     # ==================== 默认状态 ====================
 

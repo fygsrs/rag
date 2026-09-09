@@ -4,6 +4,35 @@ from unittest.mock import Mock
 from utils.embedding_utils import EmbeddingTool
 
 
+class FakeDenseVector(list):
+    def tolist(self):
+        return list(self)
+
+
+def test_bge_dense_and_sparse_response_is_converted_for_milvus():
+    config = SimpleNamespace(
+        provider="bge",
+        bge_m3_path="D:/models/bge-m3",
+        bge_m3="BAAI/bge-m3",
+        bge_device="cpu",
+        bge_fp16=False,
+        batch_size=2,
+    )
+    model = Mock()
+    model.encode.return_value = {
+        "dense_vecs": [FakeDenseVector([0.1, 0.2, 0.3])],
+        "lexical_weights": [{"12": 0.9, "30": 0.4}],
+    }
+    tool = EmbeddingTool(config)
+    tool._bge_model = model
+
+    dense, sparse = tool.embed_dense_and_sparse(["测试商品"])
+
+    assert dense == [[0.1, 0.2, 0.3]]
+    assert sparse == [{12: 0.9, 30: 0.4}]
+    assert model.encode.call_args.kwargs["return_sparse"] is True
+
+
 def test_aliyun_dense_and_sparse_response_is_converted_for_milvus(monkeypatch):
     config = SimpleNamespace(
         provider="aliyun",
