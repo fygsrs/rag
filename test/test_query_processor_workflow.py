@@ -1,9 +1,26 @@
 from processor.query_processor.main_graph import KBQueryWorkflow
+from processor.query_processor.nodes.a_node_item_name_confirm import (
+    NodeItemNameConfirm,
+)
 from processor.query_processor.state import create_default_query_state
 
 
 class TestKBQueryWorkflow:
-    def test_full_retrieval_route_can_run(self):
+    @staticmethod
+    def _stub_item_name_confirm(self, state):
+        return {
+            "rewritten_query": state.get("rewritten_query")
+            or state.get("original_query", ""),
+            "item_names": list(state.get("item_names") or []),
+            "answer": state.get("answer", ""),
+        }
+
+    def test_full_retrieval_route_can_run(self, monkeypatch):
+        monkeypatch.setattr(
+            NodeItemNameConfirm,
+            "process",
+            self._stub_item_name_confirm,
+        )
         state = create_default_query_state(original_query="如何调整转印温度？")
 
         result = KBQueryWorkflow().run(state)
@@ -16,7 +33,12 @@ class TestKBQueryWorkflow:
         assert result["reranked_docs"] == []
         assert result["answer"] == ""
 
-    def test_existing_answer_skips_retrieval_route(self):
+    def test_existing_answer_skips_retrieval_route(self, monkeypatch):
+        monkeypatch.setattr(
+            NodeItemNameConfirm,
+            "process",
+            self._stub_item_name_confirm,
+        )
         state = {
             "original_query": "这个怎么设置？",
             "answer": "请先确认具体商品型号。",
