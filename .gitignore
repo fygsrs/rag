@@ -52,3 +52,6 @@ output/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local interview notes
+RAG_IMPORT_QUERY_INTERVIEW_GUIDE.md

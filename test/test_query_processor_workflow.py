@@ -8,6 +8,9 @@ from processor.query_processor.nodes.b_node_search_embedding import (
 from processor.query_processor.nodes.c_node_search_embedding_hyde import (
     NodeSearchEmbeddingHyde,
 )
+from processor.query_processor.nodes.d_node_web_search_mcp import (
+    NodeWebSearchMcp,
+)
 from processor.query_processor.state import create_default_query_state
 
 
@@ -35,6 +38,11 @@ class TestKBQueryWorkflow:
                 "hyde_embedding_chunks": [],
                 "hyde_doc": "",
             },
+        )
+        monkeypatch.setattr(
+            NodeWebSearchMcp,
+            "process",
+            lambda self, state: {"web_search_docs": []},
         )
 
     def test_full_retrieval_route_can_run(self, monkeypatch):

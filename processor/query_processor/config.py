@@ -61,3 +61,60 @@ class QueryConfig:
     search_sparse_weight: float = field(
         default_factory=lambda: float(os.getenv("QUERY_SEARCH_SPARSE_WEIGHT", "0.2"))
     )
+    dashscope_api_key: str = field(
+        default_factory=lambda: os.getenv("DASHSCOPE_API_KEY", "")
+    )
+    web_search_mcp_url: str = field(
+        default_factory=lambda: os.getenv(
+            "WEB_SEARCH_MCP_URL",
+            "https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/mcp",
+        )
+    )
+    web_search_tool: str = field(
+        default_factory=lambda: os.getenv(
+            "WEB_SEARCH_MCP_TOOL",
+            "bailian_web_search",
+        )
+    )
+    web_search_top_k: int = field(
+        default_factory=lambda: int(os.getenv("WEB_SEARCH_TOP_K", "5"))
+    )
+    web_search_timeout: float = field(
+        default_factory=lambda: float(os.getenv("WEB_SEARCH_TIMEOUT", "10"))
+    )
+    rrf_k: int = field(
+        default_factory=lambda: int(os.getenv("RRF_K", "60"))
+    )
+    rrf_embedding_weight: float = field(
+        default_factory=lambda: float(os.getenv("RRF_EMBEDDING_WEIGHT", "1.0"))
+    )
+    rrf_hyde_weight: float = field(
+        default_factory=lambda: float(os.getenv("RRF_HYDE_WEIGHT", "0.7"))
+    )
+    rrf_max_results: int = field(
+        default_factory=lambda: int(os.getenv("RRF_MAX_RESULTS", "10"))
+    )
+    rerank_url: str = field(
+        default_factory=lambda: os.getenv("DASHSCOPE_RERANK_URL", "")
+    )
+    rerank_model: str = field(
+        default_factory=lambda: os.getenv(
+            "DASHSCOPE_RERANK_MODEL",
+            "qwen3.7-text-rerank",
+        )
+    )
+    rerank_timeout: float = field(
+        default_factory=lambda: float(os.getenv("RERANK_TIMEOUT", "30"))
+    )
+    rerank_min_results: int = field(
+        default_factory=lambda: int(os.getenv("RERANK_MIN_RESULTS", "3"))
+    )
+    rerank_max_results: int = field(
+        default_factory=lambda: int(os.getenv("RERANK_MAX_RESULTS", "10"))
+    )
+    rerank_absolute_gap: float = field(
+        default_factory=lambda: float(os.getenv("RERANK_ABSOLUTE_GAP", "0.5"))
+    )
+    rerank_relative_gap: float = field(
+        default_factory=lambda: float(os.getenv("RERANK_RELATIVE_GAP", "0.25"))
+    )
