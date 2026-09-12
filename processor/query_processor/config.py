@@ -10,7 +10,7 @@ load_dotenv()
 
 @dataclass(frozen=True)
 class QueryConfig:
-    """商品确认节点使用的模型、检索和判定配置。"""
+    """知识库查询节点使用的模型、检索和判定配置。"""
 
     item_model: str = field(
         default_factory=lambda: os.getenv("ITEM_MODEL", "")
@@ -45,4 +45,19 @@ class QueryConfig:
     )
     item_name_sparse_weight: float = field(
         default_factory=lambda: float(os.getenv("ITEM_NAME_SPARSE_WEIGHT", "0.3"))
+    )
+    hyde_model: str = field(
+        default_factory=lambda: os.getenv("LLM_DEFAULT_MODEL", "")
+    )
+    chunks_collection: str = field(
+        default_factory=lambda: os.getenv("CHUNKS_COLLECTION", "")
+    )
+    search_top_k: int = field(
+        default_factory=lambda: int(os.getenv("QUERY_SEARCH_TOP_K", "5"))
+    )
+    search_dense_weight: float = field(
+        default_factory=lambda: float(os.getenv("QUERY_SEARCH_DENSE_WEIGHT", "0.8"))
+    )
+    search_sparse_weight: float = field(
+        default_factory=lambda: float(os.getenv("QUERY_SEARCH_SPARSE_WEIGHT", "0.2"))
     )

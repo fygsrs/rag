@@ -2,6 +2,12 @@ from processor.query_processor.main_graph import KBQueryWorkflow
 from processor.query_processor.nodes.a_node_item_name_confirm import (
     NodeItemNameConfirm,
 )
+from processor.query_processor.nodes.b_node_search_embedding import (
+    NodeSearchEmbedding,
+)
+from processor.query_processor.nodes.c_node_search_embedding_hyde import (
+    NodeSearchEmbeddingHyde,
+)
 from processor.query_processor.state import create_default_query_state
 
 
@@ -15,7 +21,24 @@ class TestKBQueryWorkflow:
             "answer": state.get("answer", ""),
         }
 
+    @staticmethod
+    def _stub_search_nodes(monkeypatch):
+        monkeypatch.setattr(
+            NodeSearchEmbedding,
+            "process",
+            lambda self, state: {"embedding_chunks": []},
+        )
+        monkeypatch.setattr(
+            NodeSearchEmbeddingHyde,
+            "process",
+            lambda self, state: {
+                "hyde_embedding_chunks": [],
+                "hyde_doc": "",
+            },
+        )
+
     def test_full_retrieval_route_can_run(self, monkeypatch):
+        self._stub_search_nodes(monkeypatch)
         monkeypatch.setattr(
             NodeItemNameConfirm,
             "process",
@@ -28,12 +51,14 @@ class TestKBQueryWorkflow:
         assert result["rewritten_query"] == "如何调整转印温度？"
         assert result["embedding_chunks"] == []
         assert result["hyde_embedding_chunks"] == []
+        assert result["hyde_doc"] == ""
         assert result["web_search_docs"] == []
         assert result["rrf_chunks"] == []
         assert result["reranked_docs"] == []
         assert result["answer"] == ""
 
     def test_existing_answer_skips_retrieval_route(self, monkeypatch):
+        self._stub_search_nodes(monkeypatch)
         monkeypatch.setattr(
             NodeItemNameConfirm,
             "process",

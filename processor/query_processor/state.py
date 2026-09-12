@@ -35,6 +35,7 @@ class QueryGraphState(TypedDict, total=False):
 
     item_names: list[str]
     rewritten_query: str
+    hyde_doc: str
     history: list[dict[str, Any]]
     is_stream: bool
 
@@ -52,6 +53,7 @@ QUERY_DEFAULT_STATE: QueryGraphState = {
     "answer": "",
     "item_names": [],
     "rewritten_query": "",
+    "hyde_doc": "",
     "history": [],
     "is_stream": False,
 }
