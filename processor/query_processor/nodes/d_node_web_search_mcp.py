@@ -29,9 +29,9 @@ class NodeWebSearchMcp(NodeBase):
         self._mcp_caller = mcp_caller
 
     def process(self, state: QueryGraphState) -> QueryGraphState:
-        self.logger.info("【%s】执行联网搜索", self.name)
         query = state.get("rewritten_query")
         if not isinstance(query, str) or not query.strip():
+            self.logger.info("联网搜索跳过 | reason=empty_query")
             return {"web_search_docs": []}
 
         top_k = int(self.config.web_search_top_k)
@@ -48,6 +48,11 @@ class NodeWebSearchMcp(NodeBase):
             self.logger.exception("百炼 MCP 联网搜索失败，降级为空结果")
             documents = []
 
+        self.logger.info(
+            "联网搜索完成 | requested_top_k=%d | hits=%d",
+            top_k,
+            len(documents),
+        )
         return {"web_search_docs": documents}
 
     async def _call_web_search_mcp(self, query: str, count: int):

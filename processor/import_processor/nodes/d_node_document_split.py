@@ -17,8 +17,6 @@ class NodeDocumentSplit(BaseNode):
     _SEPARATORS = ["\n\n", "\n", "。", "！", "？", "；", " ", ""]
 
     def process(self, state: ImportGraphState):
-        self.logger.info("%s节点开始执行...", self.name)
-
         # 1. 参数处理
         content, file_title = self._step_1_get_inputs(state)
 

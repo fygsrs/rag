@@ -1,5 +1,4 @@
 import json
-import logging
 import time
 import zipfile
 from pathlib import Path
@@ -20,14 +19,13 @@ class NodePDFToMD(BaseNode):
     name = "node_pdf_to_md"
 
     def process(self, state: ImportGraphState):
-        logging.info(f"{self.name}节点开始执行...")
-
         #参数检查
         pdf_path_obj,output_dir_obj = self.validate_paths(state)
+        self.logger.info("开始 MinerU 结构化解析 | file=%s", pdf_path_obj.name)
 
         #上传获取下载地址
         zip_url = self.upload_and_poll(pdf_path_obj)
-        logging.info(f"下载地址：{zip_url}")
+        self.logger.info("MinerU 解析结果已就绪 | file=%s", pdf_path_obj.name)
 
         md_path = self.download_and_extract(zip_url,output_dir_obj,pdf_path_obj.stem)
 
@@ -36,6 +34,12 @@ class NodePDFToMD(BaseNode):
 
         state["md_content"] = md_content
         state["md_path"] = md_path
+        self.logger.info(
+            "PDF 转 Markdown 完成 | file=%s | chars=%d | md_path=%s",
+            pdf_path_obj.name,
+            len(md_content),
+            md_path,
+        )
         return state
 
 
@@ -82,19 +86,33 @@ class NodePDFToMD(BaseNode):
 
         batch_id = result["data"]["batch_id"]
         url = result["data"]["file_urls"][0]
-        logging.info('batch_id:{},url:{}'.format(batch_id, url))
+        self.logger.info(
+            "MinerU 上传地址申请成功 | batch_id=%s | file=%s",
+            batch_id,
+            pdf_path_obj.name,
+        )
         #上传文件
         with open(pdf_path_obj, 'rb') as f:
             res_upload = requests.put(url, data=f)
             if res_upload.status_code == 200:
-                logging.info(f"{url} upload success")
+                self.logger.info(
+                    "PDF 上传成功 | batch_id=%s | file=%s",
+                    batch_id,
+                    pdf_path_obj.name,
+                )
             else:
-                logging.info(f"{url} upload failed")
+                self.logger.error(
+                    "PDF 上传失败 | batch_id=%s | file=%s | status=%s",
+                    batch_id,
+                    pdf_path_obj.name,
+                    res_upload.status_code,
+                )
         # 获取下载连接
         poll_url = f"{base_url}/extract-results/batch/{batch_id}"
         start_time =  time.time()
         timeout_seconds = 600
         poll_interval = 3
+        last_progress_log = -15
 
         while True:
             end_time = time.time() - start_time
@@ -103,7 +121,11 @@ class NodePDFToMD(BaseNode):
             try:
                 res_poll = requests.get(url=poll_url, headers=header,timeout =10)
             except Exception as e:
-                self.logger.error(f"轮询接口异常：{e}")
+                self.logger.warning(
+                    "MinerU 状态轮询异常，将继续重试 | batch_id=%s | error=%s",
+                    batch_id,
+                    e,
+                )
                 time.sleep(poll_interval)
                 continue
             if res_poll.status_code != 200:
@@ -124,12 +146,20 @@ class NodePDFToMD(BaseNode):
                 err_msg = extract_state.get("err_msg","未知错误，无具体信息")
                 return PdfConversionError(f"任务解析失败:{err_msg}")
             else:
-                self.logger.info(f"任务轮询中...已耗时{int(end_time)}s,状态:{extract_state}")
+                elapsed_seconds = int(end_time)
+                if elapsed_seconds - last_progress_log >= 15:
+                    self.logger.info(
+                        "MinerU 解析中 | batch_id=%s | state=%s | elapsed=%ds",
+                        batch_id,
+                        extract_state,
+                        elapsed_seconds,
+                    )
+                    last_progress_log = elapsed_seconds
                 time.sleep(poll_interval)
 
 
     def download_and_extract(self, zip_url, output_dir_obj, stem):
-        logging.info("download and extract")
+        self.logger.info("开始下载并解压 MinerU 结果 | file_title=%s", stem)
         response = requests.get(zip_url)
         if response.status_code != 200:
             raise FileProcessingError(message=f"获取下载文件失败:{response.text}")
@@ -142,11 +172,14 @@ class NodePDFToMD(BaseNode):
         with zipfile.ZipFile(zip_save_path, 'r') as zip_ref:
             zip_ref.extractall(extract_target_dir)
 
-        self.logger.info(f"【md重命名】开始")
         target_md_file = extract_target_dir / "full.md"
         name = target_md_file.with_name(f"{stem}.md")
         target_md_file.rename(name)
-        self.logger.info(f"【md重命名】结束")
+        self.logger.info(
+            "MinerU 结果解压完成 | file_title=%s | zip_bytes=%d",
+            stem,
+            len(response.content),
+        )
 
         return str(name.absolute())
 

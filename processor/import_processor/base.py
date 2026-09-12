@@ -7,6 +7,7 @@
 from abc import ABC, abstractmethod
 from typing import TypeVar, Optional
 import logging
+import time
 
 from processor.import_processor.config import get_config, ImportConfig
 from processor.import_processor.exceptions import ImportProcessError
@@ -62,19 +63,35 @@ class BaseNode(ABC):
         Raises:
             ImportProcessError: 节点执行失败时抛出
         """
+        started_at = time.perf_counter()
+        file_title = ""
+        if isinstance(state, dict):
+            file_title = str(state.get("file_title") or "").strip()
+        context = f" | file_title={file_title}" if file_title else ""
+
         try:
             # 1. 开始准备执行节点
-            self.logger.info(f"--- {self.name} 开始 ---")
+            self.logger.info("--- %s 开始%s ---", self.name, context)
 
             # 2. 执行节点
             result = self.process(state)
 
             # 3. 执行节点成功
-            self.logger.info(f"--- {self.name} 完成 ---")
+            self.logger.info(
+                "--- %s 完成%s | elapsed=%.2fs ---",
+                self.name,
+                context,
+                time.perf_counter() - started_at,
+            )
 
             return result
         except Exception as e:
-            self.logger.error(f"{self.name} 执行失败: {e}")
+            self.logger.exception(
+                "--- %s 失败%s | elapsed=%.2fs ---",
+                self.name,
+                context,
+                time.perf_counter() - started_at,
+            )
             raise ImportProcessError(
                 message=str(e),
                 node_name=self.name,
@@ -123,3 +140,4 @@ def setup_logging(level: int = logging.INFO):
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
+    logging.getLogger("import").setLevel(level)

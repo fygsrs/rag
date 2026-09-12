@@ -28,7 +28,6 @@ class NodeRerank(NodeBase):
         self._http_client = http_client or httpx
 
     def process(self, state: QueryGraphState) -> QueryGraphState:
-        self.logger.info("【%s】执行精排", self.name)
         query = state.get("rewritten_query")
         if not isinstance(query, str) or not query.strip():
             raise ValueError("rewritten_query 必须是非空字符串")
@@ -38,6 +37,7 @@ class NodeRerank(NodeBase):
             state.get("web_search_docs") or [],
         )
         if not documents:
+            self.logger.info("精排跳过 | reason=no_documents")
             return {"reranked_docs": []}
 
         scores = self._rerank_documents(
@@ -51,6 +51,14 @@ class NodeRerank(NodeBase):
             ranked_documents.append(document)
 
         cutoff = self._find_cliff_cutoff(ranked_documents)
+        top_score = float(ranked_documents[0]["score"]) if ranked_documents else 0.0
+        self.logger.info(
+            "精排完成 | input=%d | output=%d | cutoff=%d | top_score=%.4f",
+            len(documents),
+            min(cutoff, len(ranked_documents)),
+            cutoff,
+            top_score,
+        )
         return {"reranked_docs": ranked_documents[:cutoff]}
 
     def _merge_documents(

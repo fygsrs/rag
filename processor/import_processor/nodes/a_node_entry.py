@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 
 from processor.import_processor.base import BaseNode
@@ -14,7 +13,6 @@ class NodeEntry(BaseNode):
     name = "node_entry"
 
     def process(self, state: ImportGraphState):
-        logging.info(f"{self.name}节点执行...")
         import_file_path = state.get("import_file_path")
         if not import_file_path:
             return StateFieldError(field_name="import_file_path",expected_type=str)
@@ -36,5 +34,11 @@ class NodeEntry(BaseNode):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         state["file_dir"] = str(output_dir)
+        self.logger.info(
+            "输入文件识别完成 | type=%s | file_title=%s | output_dir=%s",
+            import_file_path_obj.suffix.lower().lstrip("."),
+            state["file_title"],
+            state["file_dir"],
+        )
         return state
 

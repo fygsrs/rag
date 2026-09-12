@@ -30,12 +30,19 @@ class NodeSearchEmbedding(NodeBase):
         self._milvus_client = milvus_client
 
     def process(self, state: QueryGraphState) -> QueryGraphState:
-        self.logger.info("【%s】执行稠密/稀疏混合检索", self.name)
         rewritten_query, item_names = self._get_query_context(state)
         chunks = self._search_chunks(
             rewritten_query,
             item_names,
             source="embedding",
+        )
+        self.logger.info(
+            "混合检索完成 | item_names=%s | dense_weight=%.2f "
+            "| sparse_weight=%.2f | hits=%d",
+            item_names,
+            float(self.config.search_dense_weight),
+            float(self.config.search_sparse_weight),
+            len(chunks),
         )
         return {"embedding_chunks": chunks}
 

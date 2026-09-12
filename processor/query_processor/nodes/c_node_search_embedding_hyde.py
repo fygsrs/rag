@@ -32,7 +32,6 @@ class NodeSearchEmbeddingHyde(NodeSearchEmbedding):
         self._llm_client = llm_client
 
     def process(self, state: QueryGraphState) -> QueryGraphState:
-        self.logger.info("【%s】执行 HyDE 检索", self.name)
         rewritten_query, item_names = self._get_query_context(state)
         hyde_doc = self._generate_hypothetical_document(
             rewritten_query,
@@ -43,6 +42,12 @@ class NodeSearchEmbeddingHyde(NodeSearchEmbedding):
             combined_text,
             item_names,
             source="hyde_embedding",
+        )
+        self.logger.info(
+            "HyDE 检索完成 | item_names=%s | hyde_chars=%d | hits=%d",
+            item_names,
+            len(hyde_doc),
+            len(chunks),
         )
         return {
             "hyde_embedding_chunks": chunks,

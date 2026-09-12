@@ -15,3 +15,4 @@ def setup_logging(level: int = logging.INFO) -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    logging.getLogger("query").setLevel(level)

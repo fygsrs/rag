@@ -41,8 +41,6 @@ class NodeMDImg(BaseNode):
     _IMAGE_PATTERN = re.compile(r"!\[(?P<alt>[^\]]*)]\((?P<target>[^)]+)\)")
 
     def process(self, state: ImportGraphState):
-        self.logger.info(f"{self.name}节点开始执行...")
-
         # 1. 参数处理
         md_content, md_path_obj, images_dir = self._get_content(state)
 
@@ -63,11 +61,19 @@ class NodeMDImg(BaseNode):
             summaries,
             md_content,
         )
+        self.logger.info(
+            "图片上传及 Markdown 链接替换完成 | count=%d",
+            len(target_images),
+        )
 
         # 5. 保存处理后的 Markdown，不覆盖原文件
         new_md_file_name = self._backup_new_md_file(md_path_obj, new_md_content)
         state["md_path"] = new_md_file_name
         state["md_content"] = new_md_content
+        self.logger.info(
+            "图片处理后的 Markdown 已保存 | path=%s",
+            new_md_file_name,
+        )
         return state
 
     def _get_content(

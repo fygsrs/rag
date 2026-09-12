@@ -37,12 +37,12 @@ class NodeItemNameConfirm(NodeBase):
         self._mongodb_util = mongodb_util
 
     def process(self, state: QueryGraphState) -> QueryGraphState:
-        self.logger.info("【%s】确认商品主体并改写问题", self.name)
         session_id, message_id, original_query = self._validate_state(state)
         self._validate_config()
         mongodb = self._get_mongodb_util()
 
         history = self._load_history(mongodb, session_id, message_id)
+        self.logger.info("会话历史读取完成 | history_count=%d", len(history))
         self._save_user_message(
             mongodb,
             session_id=session_id,
@@ -54,6 +54,11 @@ class NodeItemNameConfirm(NodeBase):
             history,
             original_query,
             list(state.get("item_names") or []),
+        )
+        self.logger.info(
+            "查询理解完成 | extracted_count=%d | extracted_names=%s",
+            len(extracted_names),
+            extracted_names,
         )
         if not extracted_names:
             answer = self._build_not_found_answer([])
@@ -546,6 +551,14 @@ class NodeItemNameConfirm(NodeBase):
         history = mongodb.get_memories(
             session_id,
             limit=max(1, int(self.config.history_limit)),
+        )
+        self.logger.info(
+            "商品确认完成 | status=%s | item_names=%s | candidate_count=%d "
+            "| history_count=%d",
+            status,
+            item_names,
+            len(candidates),
+            len(history),
         )
         return {
             "item_names": list(item_names),

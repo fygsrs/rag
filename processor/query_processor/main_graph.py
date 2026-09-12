@@ -17,6 +17,7 @@ from processor.query_processor.nodes.d_node_web_search_mcp import (
 from processor.query_processor.nodes.e_node_rrf import NodeRrf
 from processor.query_processor.nodes.f_node_rerank import NodeRerank
 from processor.query_processor.nodes.g_node_answer_output import NodeAnswerOutput
+from processor.query_processor.logger import setup_logging
 from processor.query_processor.state import QueryGraphState
 
 
@@ -87,13 +88,13 @@ class KBQueryWorkflow:
 
     def run(self, state: QueryGraphState, stream: bool = False):
         """运行查询工作流；stream=True 时返回状态事件迭代器。"""
+        setup_logging()
         if stream:
             return self.graph.stream(state, stream_mode="values")
         return self.graph.invoke(state)
 
 
 if __name__ == "__main__":
-    from processor.query_processor.logger import setup_logging
     from processor.query_processor.state import create_default_query_state
 
     setup_logging()

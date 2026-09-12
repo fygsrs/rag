@@ -20,7 +20,6 @@ class NodeRrf(NodeBase):
         self.config = config or QueryConfig()
 
     def process(self, state: QueryGraphState) -> QueryGraphState:
-        self.logger.info("【%s】执行 RRF 融合排序", self.name)
         embedding_chunks = self._get_documents(state, "embedding_chunks")
         hyde_chunks = self._get_documents(state, "hyde_embedding_chunks")
         rrf_chunks = self._rrf_merge(
@@ -28,6 +27,15 @@ class NodeRrf(NodeBase):
                 (embedding_chunks, float(self.config.rrf_embedding_weight)),
                 (hyde_chunks, float(self.config.rrf_hyde_weight)),
             ]
+        )
+        self.logger.info(
+            "RRF 融合完成 | embedding=%d | hyde=%d | output=%d "
+            "| embedding_weight=%.2f | hyde_weight=%.2f",
+            len(embedding_chunks),
+            len(hyde_chunks),
+            len(rrf_chunks),
+            float(self.config.rrf_embedding_weight),
+            float(self.config.rrf_hyde_weight),
         )
         return {"rrf_chunks": rrf_chunks}
 

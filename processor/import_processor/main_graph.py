@@ -72,6 +72,7 @@ class ImportWorkflow:
         return graph_compile
 
     def run(self,state:ImportGraphState,stream:bool = False):
+        setup_logging()
         if stream:
             return self.graph.stream(state,stream_mode="values")
         else:
