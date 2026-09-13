@@ -107,6 +107,11 @@ class NodePDFToMD(BaseNode):
                     pdf_path_obj.name,
                     res_upload.status_code,
                 )
+                raise FileProcessingError(
+                    message=(
+                        f"PDF 上传失败，状态码: {res_upload.status_code}"
+                    )
+                )
         # 获取下载连接
         poll_url = f"{base_url}/extract-results/batch/{batch_id}"
         start_time =  time.time()
@@ -129,7 +134,10 @@ class NodePDFToMD(BaseNode):
                 time.sleep(poll_interval)
                 continue
             if res_poll.status_code != 200:
-                return PdfConversionError(f"http请求失败,状态码:{res_poll.status_code},响应内容:{res_poll}")
+                raise PdfConversionError(
+                    f"http请求失败,状态码:{res_poll.status_code},"
+                    f"响应内容:{res_poll.text}"
+                )
 
             poll_data = res_poll.json()
             if poll_data["code"] != 0:
@@ -143,8 +151,8 @@ class NodePDFToMD(BaseNode):
                 full_zip_url = extract_result["full_zip_url"]
                 return full_zip_url
             elif extract_state == "failed":
-                err_msg = extract_state.get("err_msg","未知错误，无具体信息")
-                return PdfConversionError(f"任务解析失败:{err_msg}")
+                err_msg = extract_result.get("err_msg", "未知错误，无具体信息")
+                raise PdfConversionError(f"任务解析失败:{err_msg}")
             else:
                 elapsed_seconds = int(end_time)
                 if elapsed_seconds - last_progress_log >= 15:
@@ -174,7 +182,11 @@ class NodePDFToMD(BaseNode):
 
         target_md_file = extract_target_dir / "full.md"
         name = target_md_file.with_name(f"{stem}.md")
-        target_md_file.rename(name)
+        if not target_md_file.is_file():
+            raise FileProcessingError(
+                message=f"MinerU 结果中缺少 Markdown 文件: {target_md_file}"
+            )
+        target_md_file.replace(name)
         self.logger.info(
             "MinerU 结果解压完成 | file_title=%s | zip_bytes=%d",
             stem,

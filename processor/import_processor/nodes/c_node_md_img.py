@@ -1,4 +1,5 @@
 import base64
+import html
 import json
 import logging
 import mimetypes
@@ -39,24 +40,41 @@ class NodeMDImg(BaseNode):
 
     name = "node_md_img"
     _IMAGE_PATTERN = re.compile(r"!\[(?P<alt>[^\]]*)]\((?P<target>[^)]+)\)")
+    _HTML_IMAGE_PATTERN = re.compile(
+        r"<img\b[^>]*\bsrc=[\"'](?P<target>[^\"']+)[\"'][^>]*>",
+        re.IGNORECASE,
+    )
 
     def process(self, state: ImportGraphState):
         # 1. 参数处理
         md_content, md_path_obj, images_dir = self._get_content(state)
 
         # 2. 图片扫描
-        target_images = self._scan_images(md_content, images_dir)
+        summary_images = self._scan_images(md_content, images_dir)
+        html_images = self._scan_html_images(md_content, images_dir)
+        target_images = []
+        seen_paths: set[Path] = set()
+        for image in [*summary_images, *html_images]:
+            image_path = Path(image[1])
+            if image_path in seen_paths:
+                continue
+            seen_paths.add(image_path)
+            target_images.append(image)
         if not target_images:
             self.logger.info("Markdown 中未发现需要处理的本地图片")
             state["md_content"] = md_content
             return state
 
         # 3. 视觉模型摘要
-        summaries = self._generate_summaries(md_path_obj.stem, target_images)
+        document_title = str(state.get("file_title") or md_path_obj.stem)
+        summaries = self._generate_summaries(
+            document_title,
+            summary_images,
+        )
 
         # 4. 上传 MinIO，并替换 Markdown 中的本地图片地址
         new_md_content = self._upload_and_replace(
-            md_path_obj.stem,
+            document_title,
             target_images,
             summaries,
             md_content,
@@ -108,18 +126,74 @@ class NodeMDImg(BaseNode):
             self.logger.warning("图片目录不存在: %s", images_dir)
             return target_images
 
-        for image_file in os.listdir(images_dir):
+        seen_files: set[str] = set()
+        for match in self._IMAGE_PATTERN.finditer(md_content):
+            relative_path = self._extract_image_path(match.group("target"))
+            if self._is_remote_image(relative_path):
+                continue
+            image_file = Path(relative_path.replace("\\", "/")).name
+            if not image_file or image_file in seen_files:
+                continue
             lower = os.path.splitext(image_file)[1].lower()
             if lower not in self.config.image_extensions:
                 self.logger.warning(f"图片格式不支持: {image_file}")
                 continue
             img_path = images_dir / image_file
-            context = self.find_image_in_md(md_content, image_file)  # 找到图片的上下文
-            if context is not None:
-                target_images.append((image_file, img_path, context))
+            if not img_path.is_file():
+                self.logger.warning("Markdown 本地图片不存在: %s", img_path)
+                continue
+            seen_files.add(image_file)
+            target_images.append(
+                (image_file, img_path, self._extract_context(md_content, match))
+            )
 
-        self.logger.info("发现 %d 张待处理图片", len(target_images))
+        self.logger.info("发现 %d 张需要视觉摘要的 Markdown 图片", len(target_images))
         return target_images
+
+    def _scan_html_images(
+        self,
+        md_content: str,
+        images_dir: Path,
+    ) -> list[tuple[str, Path, tuple[str, str]]]:
+        """扫描 HTML 表格里的本地图片；上传但不额外调用视觉模型。"""
+        if not images_dir.is_dir():
+            return []
+        images = []
+        seen_files: set[str] = set()
+        for match in self._HTML_IMAGE_PATTERN.finditer(md_content):
+            relative_path = unquote(match.group("target").strip())
+            if self._is_remote_image(relative_path):
+                continue
+            image_file = Path(relative_path.replace("\\", "/")).name
+            if not image_file or image_file in seen_files:
+                continue
+            image_path = images_dir / image_file
+            if not image_path.is_file():
+                self.logger.warning("HTML 本地图片不存在: %s", image_path)
+                continue
+            seen_files.add(image_file)
+            images.append(
+                (image_file, image_path, self._extract_context(md_content, match))
+            )
+        self.logger.info("发现 %d 张 HTML 表格图片", len(images))
+        return images
+
+    @staticmethod
+    def _is_remote_image(target: str) -> bool:
+        normalized = target.strip().casefold()
+        return normalized.startswith(("http://", "https://", "data:", "//"))
+
+    @staticmethod
+    def _extract_context(
+        md_content: str,
+        match: re.Match,
+        context_len: int = 100,
+    ) -> tuple[str, str]:
+        start, end = match.span()
+        return (
+            md_content[max(0, start - context_len) : start],
+            md_content[end : min(len(md_content), end + context_len)],
+        )
 
     @staticmethod
     def find_image_in_md(
@@ -141,7 +215,10 @@ class NodeMDImg(BaseNode):
             return None
 
         pattern = re.compile(
-            r"!\[[^\]]*]\([^)]*?" + re.escape(image_file) + r"[^)]*\)"
+            r"(?:!\[[^\]]*]\([^)]*?|<img\b[^>]*\bsrc=[\"'][^\"']*?)"
+            + re.escape(image_file)
+            + r"(?:[^)]*\)|[^\"']*[\"'][^>]*>)",
+            re.IGNORECASE,
         )
         match = pattern.search(md_content)
         if not match:
@@ -314,7 +391,15 @@ class NodeMDImg(BaseNode):
                 f"{self.config.get_minio_base_url()}/"
                 f"{quote(self.config.minio_bucket)}/{quote(object_name, safe='/')}"
             )
-            summary = summaries[image_path].strip()
+            summary = summaries.get(image_path, "").strip()
+            if not summary:
+                previous_text, following_text = image[2] or ("", "")
+                context_text = re.sub(
+                    r"<[^>]+>",
+                    " ",
+                    f"{previous_text} {following_text}",
+                )
+                summary = " ".join(context_text.split()) or "文档图片"
             alt_text = " ".join(summary.split())[:120]
             alt_text = alt_text.replace("[", "").replace("]", "")
             replacement = (
@@ -326,6 +411,19 @@ class NodeMDImg(BaseNode):
             )
             new_md_content = image_pattern.sub(
                 lambda _: replacement,
+                new_md_content,
+            )
+            html_pattern = re.compile(
+                r"<img\b[^>]*\bsrc=[\"'][^\"']*?"
+                + re.escape(image_file)
+                + r"[^\"']*[\"'][^>]*>",
+                re.IGNORECASE,
+            )
+            html_replacement = (
+                f'<img src="{object_url}" alt="{html.escape(alt_text, quote=True)}"/>'
+            )
+            new_md_content = html_pattern.sub(
+                lambda _: html_replacement,
                 new_md_content,
             )
 

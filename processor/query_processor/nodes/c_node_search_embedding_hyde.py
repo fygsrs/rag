@@ -32,6 +32,10 @@ class NodeSearchEmbeddingHyde(NodeSearchEmbedding):
         self._llm_client = llm_client
 
     def process(self, state: QueryGraphState) -> QueryGraphState:
+        if state.get("search_mode") == "fast":
+            self.logger.info("快速模式跳过 HyDE 检索")
+            return {"hyde_embedding_chunks": [], "hyde_doc": ""}
+
         rewritten_query, item_names = self._get_query_context(state)
         hyde_doc = self._generate_hypothetical_document(
             rewritten_query,

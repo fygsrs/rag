@@ -19,6 +19,8 @@ class RetrievedDocument(TypedDict, total=False):
 class QueryGraphState(TypedDict, total=False):
     """查询流程中由各节点逐步补充的共享状态。"""
 
+    task_id: str
+    search_mode: str
     session_id: str
     message_id: str
     original_query: str
@@ -41,6 +43,8 @@ class QueryGraphState(TypedDict, total=False):
 
 
 QUERY_DEFAULT_STATE: QueryGraphState = {
+    "task_id": "",
+    "search_mode": "deep",
     "session_id": "",
     "message_id": "",
     "original_query": "",

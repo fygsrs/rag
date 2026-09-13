@@ -29,6 +29,10 @@ class NodeWebSearchMcp(NodeBase):
         self._mcp_caller = mcp_caller
 
     def process(self, state: QueryGraphState) -> QueryGraphState:
+        if state.get("search_mode") == "fast":
+            self.logger.info("快速模式跳过联网搜索")
+            return {"web_search_docs": []}
+
         query = state.get("rewritten_query")
         if not isinstance(query, str) or not query.strip():
             self.logger.info("联网搜索跳过 | reason=empty_query")

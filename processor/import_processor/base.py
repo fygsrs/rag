@@ -64,10 +64,13 @@ class BaseNode(ABC):
             ImportProcessError: 节点执行失败时抛出
         """
         started_at = time.perf_counter()
-        file_title = ""
+        context_parts = []
         if isinstance(state, dict):
-            file_title = str(state.get("file_title") or "").strip()
-        context = f" | file_title={file_title}" if file_title else ""
+            for field_name in ("task_id", "file_title"):
+                value = str(state.get(field_name) or "").strip()
+                if value:
+                    context_parts.append(f"{field_name}={value}")
+        context = f" | {' | '.join(context_parts)}" if context_parts else ""
 
         try:
             # 1. 开始准备执行节点

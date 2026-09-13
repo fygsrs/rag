@@ -56,6 +56,7 @@ class TestKBQueryWorkflow:
 
         result = KBQueryWorkflow().run(state)
 
+        assert result["task_id"].startswith("query-")
         assert result["rewritten_query"] == "如何调整转印温度？"
         assert result["embedding_chunks"] == []
         assert result["hyde_embedding_chunks"] == []
@@ -79,6 +80,7 @@ class TestKBQueryWorkflow:
 
         result = KBQueryWorkflow().run(state)
 
+        assert result["task_id"].startswith("query-")
         assert result["answer"] == "请先确认具体商品型号。"
         assert "embedding_chunks" not in result
         assert "hyde_embedding_chunks" not in result

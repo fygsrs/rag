@@ -23,6 +23,8 @@ env/
 # Packaging and build output
 build/
 dist/
+node_modules/
+*.tsbuildinfo
 *.egg-info/
 .eggs/
 
@@ -47,6 +49,8 @@ chroma_db/
 vector_db/
 storage/
 output/
+.runtime/
+.playwright-cli/
 
 # Operating-system files
 .DS_Store

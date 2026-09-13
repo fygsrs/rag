@@ -46,6 +46,8 @@ class ImportGraphState(TypedDict, total=False):
 
     # ==================== 控制标志 ====================
 
+    task_id: str  # 一次完整导入任务的唯一标识
+
     is_md_read_enabled: bool  # 是否启用 MD 读取
 
     is_pdf_read_enabled: bool  # 是否启用 PDF 读取
@@ -78,6 +80,8 @@ class ImportGraphState(TypedDict, total=False):
 
 
 GRAPH_DEFAULT_STATE: ImportGraphState = {
+    "task_id": "",
+
     "is_pdf_read_enabled": False,
 
     "is_md_read_enabled": False,

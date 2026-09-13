@@ -1,5 +1,6 @@
 import json
 import logging
+from uuid import uuid4
 
 from langgraph.graph import StateGraph,END,START
 
@@ -28,6 +29,19 @@ class ImportWorkflow:
             return "c_node_md_img"
         else:
             return END
+
+    @staticmethod
+    def _ensure_task_id(state: ImportGraphState) -> str:
+        """保留调用方任务 ID；缺失时为本次导入生成一个。"""
+        task_id = state.get("task_id")
+        if task_id is None or (isinstance(task_id, str) and not task_id.strip()):
+            task_id = f"import-{uuid4().hex}"
+            state["task_id"] = task_id
+            return task_id
+        if not isinstance(task_id, str):
+            raise ValueError("task_id 必须是字符串")
+        state["task_id"] = task_id.strip()
+        return state["task_id"]
 
     @property
     def graph(self):
@@ -73,10 +87,17 @@ class ImportWorkflow:
 
     def run(self,state:ImportGraphState,stream:bool = False):
         setup_logging()
+        self._ensure_task_id(state)
         if stream:
             return self.graph.stream(state,stream_mode="values")
         else:
             return self.graph.invoke(state)
+
+    def stream_updates(self, state: ImportGraphState):
+        """逐节点返回状态增量，供持久化导入任务记录进度。"""
+        setup_logging()
+        self._ensure_task_id(state)
+        return self.graph.stream(state, stream_mode="updates")
 
 if __name__ == "__main__":
     setup_logging()

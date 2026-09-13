@@ -18,6 +18,8 @@ class MongoDBConfig:
     auth_source: str
     database: str
     memory_collection: str
+    user_collection: str
+    import_task_collection: str
     server_selection_timeout_ms: int
 
     def get_uri(self) -> str:
@@ -41,6 +43,11 @@ mongodb_config = MongoDBConfig(
     memory_collection=os.getenv(
         "MONGODB_MEMORY_COLLECTION",
         "conversation_memories",
+    ),
+    user_collection=os.getenv("MONGODB_USER_COLLECTION", "users"),
+    import_task_collection=os.getenv(
+        "MONGODB_IMPORT_TASK_COLLECTION",
+        "import_tasks",
     ),
     server_selection_timeout_ms=int(
         os.getenv("MONGODB_SERVER_SELECTION_TIMEOUT_MS", "5000")

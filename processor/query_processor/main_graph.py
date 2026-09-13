@@ -1,5 +1,7 @@
 """知识库查询工作流编排。"""
 
+from uuid import uuid4
+
 from langgraph.graph import END, StateGraph
 
 from processor.query_processor.nodes.a_node_item_name_confirm import (
@@ -24,8 +26,16 @@ from processor.query_processor.state import QueryGraphState
 class KBQueryWorkflow:
     """组织主体确认、多路召回、融合、精排和答案生成。"""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        answer_output_node: NodeAnswerOutput | None = None,
+        stream_writer=None,
+    ) -> None:
         self._compiled_graph = None
+        self._answer_output_node = answer_output_node or NodeAnswerOutput(
+            stream_writer=stream_writer
+        )
 
     @staticmethod
     def _route_after_item_name_confirm(state: QueryGraphState) -> str:
@@ -33,6 +43,19 @@ class KBQueryWorkflow:
         if state.get("answer"):
             return "node_answer_output"
         return "node_multi_search"
+
+    @staticmethod
+    def _ensure_task_id(state: QueryGraphState) -> str:
+        """保留调用方任务 ID；缺失时为本次查询生成一个。"""
+        task_id = state.get("task_id")
+        if task_id is None or (isinstance(task_id, str) and not task_id.strip()):
+            task_id = f"query-{uuid4().hex}"
+            state["task_id"] = task_id
+            return task_id
+        if not isinstance(task_id, str):
+            raise ValueError("task_id 必须是字符串")
+        state["task_id"] = task_id.strip()
+        return state["task_id"]
 
     @staticmethod
     def _empty_update(_: QueryGraphState) -> QueryGraphState:
@@ -51,7 +74,7 @@ class KBQueryWorkflow:
         graph.add_node("node_web_search_mcp", NodeWebSearchMcp())
         graph.add_node("node_rrf", NodeRrf())
         graph.add_node("node_rerank", NodeRerank())
-        graph.add_node("node_answer_output", NodeAnswerOutput())
+        graph.add_node("node_answer_output", self._answer_output_node)
 
         graph.set_entry_point("node_item_name_confirm")
         graph.add_conditional_edges(
@@ -89,9 +112,16 @@ class KBQueryWorkflow:
     def run(self, state: QueryGraphState, stream: bool = False):
         """运行查询工作流；stream=True 时返回状态事件迭代器。"""
         setup_logging()
+        self._ensure_task_id(state)
         if stream:
             return self.graph.stream(state, stream_mode="values")
         return self.graph.invoke(state)
+
+    def stream_updates(self, state: QueryGraphState):
+        """逐节点返回状态增量，供 API 转换为可视化进度事件。"""
+        setup_logging()
+        self._ensure_task_id(state)
+        return self.graph.stream(state, stream_mode="updates")
 
 
 if __name__ == "__main__":

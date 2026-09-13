@@ -29,7 +29,7 @@ class QueryConfig:
     )
     item_name_confirm_threshold: float = field(
         default_factory=lambda: float(
-            os.getenv("ITEM_NAME_CONFIRM_THRESHOLD", "0.85")
+            os.getenv("ITEM_NAME_CONFIRM_THRESHOLD", "0.80")
         )
     )
     item_name_candidate_threshold: float = field(
@@ -38,7 +38,7 @@ class QueryConfig:
         )
     )
     item_name_score_margin: float = field(
-        default_factory=lambda: float(os.getenv("ITEM_NAME_SCORE_MARGIN", "0.15"))
+        default_factory=lambda: float(os.getenv("ITEM_NAME_SCORE_MARGIN", "0.10"))
     )
     item_name_dense_weight: float = field(
         default_factory=lambda: float(os.getenv("ITEM_NAME_DENSE_WEIGHT", "0.7"))
@@ -48,6 +48,12 @@ class QueryConfig:
     )
     hyde_model: str = field(
         default_factory=lambda: os.getenv("LLM_DEFAULT_MODEL", "")
+    )
+    answer_model: str = field(
+        default_factory=lambda: os.getenv(
+            "ANSWER_MODEL",
+            os.getenv("LLM_DEFAULT_MODEL", ""),
+        )
     )
     chunks_collection: str = field(
         default_factory=lambda: os.getenv("CHUNKS_COLLECTION", "")

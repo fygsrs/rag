@@ -21,6 +21,13 @@ class NodeRrf(NodeBase):
 
     def process(self, state: QueryGraphState) -> QueryGraphState:
         embedding_chunks = self._get_documents(state, "embedding_chunks")
+        if state.get("search_mode") == "fast":
+            self.logger.info(
+                "快速模式跳过 RRF，多路结果直接使用普通检索 | output=%d",
+                len(embedding_chunks),
+            )
+            return {"rrf_chunks": embedding_chunks}
+
         hyde_chunks = self._get_documents(state, "hyde_embedding_chunks")
         rrf_chunks = self._rrf_merge(
             [

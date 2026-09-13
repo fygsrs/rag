@@ -1,6 +1,7 @@
 """基于 MongoDB 的会话记忆存储工具。"""
 
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 from pymongo import ASCENDING, DESCENDING, MongoClient
@@ -137,6 +138,54 @@ class MongoDBUtil:
         for memory in memories:
             memory["_id"] = str(memory["_id"])
         return memories
+
+    def list_sessions(
+        self,
+        *,
+        limit: int = 20,
+        session_prefix: str = "",
+    ) -> list[dict[str, Any]]:
+        """按最近更新时间列出会话摘要。"""
+        if limit <= 0 or limit > 100:
+            raise ValueError("limit 必须在 1 到 100 之间")
+
+        pipeline: list[dict[str, Any]] = []
+        if session_prefix:
+            pipeline.append(
+                {
+                    "$match": {
+                        "session_id": {
+                            "$regex": f"^{re.escape(session_prefix)}"
+                        }
+                    }
+                }
+            )
+        pipeline.extend([
+            {"$sort": {"created_at": ASCENDING}},
+            {
+                "$group": {
+                    "_id": "$session_id",
+                    "title": {"$first": "$content"},
+                    "last_message": {"$last": "$content"},
+                    "updated_at": {"$max": "$updated_at"},
+                    "message_count": {"$sum": 1},
+                }
+            },
+            {"$sort": {"updated_at": DESCENDING}},
+            {"$limit": limit},
+        ])
+        sessions = []
+        for item in self.collection.aggregate(pipeline):
+            sessions.append(
+                {
+                    "session_id": str(item["_id"])[len(session_prefix):],
+                    "title": str(item.get("title") or "新对话"),
+                    "last_message": str(item.get("last_message") or ""),
+                    "updated_at": item.get("updated_at"),
+                    "message_count": int(item.get("message_count") or 0),
+                }
+            )
+        return sessions
 
     def delete_memory(self, *, session_id: str, message_id: str) -> None:
         """按会话和消息 ID 删除一条幂等消息；消息不存在时不报错。"""

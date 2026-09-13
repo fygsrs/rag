@@ -21,7 +21,7 @@ class NodeBase(ABC):
         started_at = time.perf_counter()
         context_parts = []
         if isinstance(state, dict):
-            for field_name in ("session_id", "message_id"):
+            for field_name in ("task_id", "session_id", "message_id"):
                 value = str(state.get(field_name) or "").strip()
                 if value:
                     context_parts.append(f"{field_name}={value}")
