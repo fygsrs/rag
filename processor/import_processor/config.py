@@ -58,6 +58,9 @@ class ImportConfig:
     minio_bucket: str = field(
         default_factory=lambda: os.getenv("MINIO_BUCKET_NAME", "")
     )
+    minio_public_endpoint: str = field(
+        default_factory=lambda: os.getenv("MINIO_PUBLIC_ENDPOINT", "")
+    )
     minio_secure: bool = False
 
     # ==================== 向量配置 ====================
@@ -85,10 +88,11 @@ class ImportConfig:
         """从环境变量加载配置"""
         return cls()
 
-    # http://192.168.200.130:9000/
+    # 图片 URL 优先使用对外地址，未配置时回退内网地址
     def get_minio_base_url(self):
         base_protocol = "https://" if self.minio_secure else "http://"
-        return base_protocol + f"{self.minio_endpoint}"
+        endpoint = self.minio_public_endpoint.strip() or self.minio_endpoint
+        return base_protocol + f"{endpoint}"
 
 
 # ==================== 全局单例 ====================

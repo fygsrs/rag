@@ -12,11 +12,13 @@ class MinIOConfig:
     access_key: str
     secret_key: str
     bucket_name: str
+    public_endpoint: str = ""
 
 
 minio_config = MinIOConfig(
     endpoint=os.getenv("MINIO_ENDPOINT", ""),
     access_key=os.getenv("MINIO_ACCESS_KEY", ""),
     secret_key = os.getenv("MINIO_SECRET_KEY", ""),
-    bucket_name = os.getenv("MINIO_BUCKET_NAME", "")
+    bucket_name = os.getenv("MINIO_BUCKET_NAME", ""),
+    public_endpoint = os.getenv("MINIO_PUBLIC_ENDPOINT", ""),
 )

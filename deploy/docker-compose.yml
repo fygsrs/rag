@@ -1,0 +1,38 @@
+name: rag
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Shanghai
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - milvus
+    volumes:
+      - rag-output:/app/output
+      - rag-runtime:/app/.runtime
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+networks:
+  milvus:
+    external: true
+
+volumes:
+  rag-output:
+  rag-runtime:
