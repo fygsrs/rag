@@ -1,6 +1,6 @@
 """最近会话和历史消息接口。"""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, status
 from starlette.concurrency import run_in_threadpool
 
 from api.markdown import render_markdown
@@ -24,6 +24,22 @@ async def list_sessions(
         session_prefix=session_prefix(str(current_user["id"])),
     )
     return [SessionSummary.model_validate(session) for session in sessions]
+
+
+@router.delete(
+    "/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="删除一个会话的全部消息",
+)
+async def delete_session(
+    session_id: str,
+    current_user: CurrentUser,
+) -> None:
+    mongodb = get_mongodb_util()
+    await run_in_threadpool(
+        mongodb.clear_session,
+        internal_session_id(str(current_user["id"]), session_id),
+    )
 
 
 @router.get(

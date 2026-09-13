@@ -24,6 +24,24 @@ class QueryConfig:
     history_limit: int = field(
         default_factory=lambda: int(os.getenv("QUERY_HISTORY_LIMIT", "20"))
     )
+    extract_history_messages: int = field(
+        default_factory=lambda: int(
+            os.getenv("QUERY_EXTRACT_HISTORY_MESSAGES", "8")
+        )
+    )
+    extract_history_chars: int = field(
+        default_factory=lambda: int(
+            os.getenv("QUERY_EXTRACT_HISTORY_CHARS", "500")
+        )
+    )
+    answer_history_messages: int = field(
+        default_factory=lambda: int(
+            os.getenv("ANSWER_HISTORY_MESSAGES", "6")
+        )
+    )
+    answer_history_chars: int = field(
+        default_factory=lambda: int(os.getenv("ANSWER_HISTORY_CHARS", "500"))
+    )
     item_name_top_k: int = field(
         default_factory=lambda: int(os.getenv("ITEM_NAME_TOP_K", "5"))
     )

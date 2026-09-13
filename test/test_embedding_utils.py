@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import httpx
+import pytest
+
 from utils.embedding_utils import EmbeddingTool
 
 
@@ -67,3 +70,98 @@ def test_aliyun_dense_and_sparse_response_is_converted_for_milvus(monkeypatch):
     request = post.call_args.kwargs["json"]
     assert request["parameters"]["output_type"] == "dense&sparse"
     assert request["parameters"]["text_type"] == "document"
+
+
+def make_aliyun_config(**overrides):
+    values = {
+        "provider": "aliyun",
+        "dashscope_api_key": "test-key",
+        "dashscope_native_url": "https://example.test/embedding",
+        "dashscope_model": "text-embedding-v4",
+        "dimension": 3,
+        "request_timeout": 10,
+        "max_retries": 2,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def make_aliyun_payload():
+    return {
+        "output": {
+            "embeddings": [
+                {
+                    "text_index": 0,
+                    "embedding": [0.1, 0.2, 0.3],
+                    "sparse_embedding": [{"index": 12, "value": 0.9}],
+                }
+            ]
+        }
+    }
+
+
+def test_aliyun_retries_transient_transport_error(monkeypatch):
+    response = Mock()
+    response.status_code = 200
+    response.json.return_value = make_aliyun_payload()
+    calls = {"count": 0}
+
+    def fake_post(*args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise httpx.ConnectError("temporary ssl eof")
+        return response
+
+    monkeypatch.setattr("utils.embedding_utils.httpx.post", fake_post)
+    monkeypatch.setattr("utils.embedding_utils.time.sleep", lambda seconds: None)
+
+    dense, sparse = EmbeddingTool(make_aliyun_config()).embed_dense_and_sparse(
+        ["测试商品"]
+    )
+
+    assert calls["count"] == 2
+    assert dense == [[0.1, 0.2, 0.3]]
+    assert sparse == [{12: 0.9}]
+
+
+def test_aliyun_gives_up_after_max_retries(monkeypatch):
+    calls = {"count": 0}
+
+    def fake_post(*args, **kwargs):
+        calls["count"] += 1
+        raise httpx.ConnectError("temporary ssl eof")
+
+    monkeypatch.setattr("utils.embedding_utils.httpx.post", fake_post)
+    monkeypatch.setattr("utils.embedding_utils.time.sleep", lambda seconds: None)
+
+    with pytest.raises(httpx.ConnectError):
+        EmbeddingTool(make_aliyun_config(max_retries=1)).embed_dense_and_sparse(
+            ["测试商品"]
+        )
+
+    assert calls["count"] == 2
+
+
+def test_aliyun_retries_retryable_status_code(monkeypatch):
+    unavailable = Mock()
+    unavailable.status_code = 503
+    ok_response = Mock()
+    ok_response.status_code = 200
+    ok_response.json.return_value = make_aliyun_payload()
+    responses = [unavailable, ok_response]
+    calls = {"count": 0}
+
+    def fake_post(*args, **kwargs):
+        response = responses[calls["count"]]
+        calls["count"] += 1
+        return response
+
+    monkeypatch.setattr("utils.embedding_utils.httpx.post", fake_post)
+    monkeypatch.setattr("utils.embedding_utils.time.sleep", lambda seconds: None)
+
+    dense, _ = EmbeddingTool(make_aliyun_config()).embed_dense_and_sparse(
+        ["测试商品"]
+    )
+
+    assert calls["count"] == 2
+    assert dense == [[0.1, 0.2, 0.3]]

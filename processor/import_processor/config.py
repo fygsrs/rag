@@ -69,7 +69,16 @@ class ImportConfig:
     )
 
     # ==================== 速率限制 ====================
-    requests_per_minute: int = 15  # 图片总结 API 速率限制
+    requests_per_minute: int = field(
+        default_factory=lambda: int(
+            os.getenv("IMAGE_SUMMARY_REQUESTS_PER_MINUTE", "60")
+        )
+    )  # 图片总结 API 速率限制（次/分钟）
+    image_summary_concurrency: int = field(
+        default_factory=lambda: int(
+            os.getenv("IMAGE_SUMMARY_CONCURRENCY", "6")
+        )
+    )  # 图片总结并发线程数
 
     @classmethod
     def from_env(cls) -> "ImportConfig":

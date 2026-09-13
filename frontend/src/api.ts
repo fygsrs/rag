@@ -35,6 +35,10 @@ export const sessionApi = {
     apiFetch<{ session_id: string; messages: unknown[] }>(
       `/api/v1/sessions/${encodeURIComponent(id)}/messages`,
     ),
+  remove: (id: string) =>
+    apiFetch<void>(`/api/v1/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 }
 
 export async function createImportTask(file: File): Promise<ImportTask> {

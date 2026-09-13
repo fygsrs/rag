@@ -18,6 +18,7 @@ import {
   Search,
   Send,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-vue-next"
 import { authApi, createImportTask, getImportTask, listImportTasks, sessionApi, streamQuery } from "./api"
@@ -26,8 +27,10 @@ import type { ChatMessage, ImportTask, ProgressStage, SessionSummary, Source, Us
 const user = ref<User | null>(null)
 const booting = ref(true)
 const authError = ref("")
-const username = ref("")
-const password = ref("")
+const DEFAULT_USERNAME = "admin"
+const DEFAULT_PASSWORD = "admin"
+const username = ref(DEFAULT_USERNAME)
+const password = ref(DEFAULT_PASSWORD)
 const loggingIn = ref(false)
 const sessions = ref<SessionSummary[]>([])
 const sessionId = ref("")
@@ -39,6 +42,9 @@ const queryError = ref("")
 const sources = ref<Source[]>([])
 const sourceTab = ref<"internal" | "web">("internal")
 const mobileSidebar = ref(false)
+const deleteTarget = ref<SessionSummary | null>(null)
+const deleting = ref(false)
+const deleteError = ref("")
 const importOpen = ref(false)
 const importTask = ref<ImportTask | null>(null)
 const importTasks = ref<ImportTask[]>([])
@@ -63,6 +69,19 @@ const initialQueryStages = (): ProgressStage[] =>
   Object.entries(stageLabels).map(([key, label]) => ({ key, label, status: "pending" }))
 
 const queryStages = ref<ProgressStage[]>(initialQueryStages())
+
+const activeStageLabel = computed(() => {
+  const running = queryStages.value.find((stage) => stage.status === "running")
+  if (running) return running.label
+  const pending = queryStages.value.find((stage) => stage.status === "pending")
+  return pending?.label || "正在检索"
+})
+
+const completedStageCount = computed(
+  () =>
+    queryStages.value.filter((stage) => stage.status === "completed" || stage.status === "skipped")
+      .length,
+)
 
 const filteredSources = computed(() =>
   sources.value.filter((source) => source.source_type === sourceTab.value),
@@ -99,6 +118,8 @@ async function signOut() {
   sessions.value = []
   messages.value = []
   sessionId.value = ""
+  username.value = DEFAULT_USERNAME
+  password.value = DEFAULT_PASSWORD
 }
 
 function newConversation() {
@@ -120,6 +141,34 @@ async function openSession(id: string) {
   queryStages.value = initialQueryStages().map((stage) => ({ ...stage, status: "completed" }))
   mobileSidebar.value = false
   scrollToBottom()
+}
+
+function requestDelete(session: SessionSummary) {
+  deleteTarget.value = session
+  deleteError.value = ""
+}
+
+function cancelDelete() {
+  if (deleting.value) return
+  deleteTarget.value = null
+  deleteError.value = ""
+}
+
+async function confirmDelete() {
+  const target = deleteTarget.value
+  if (!target || deleting.value) return
+  deleting.value = true
+  deleteError.value = ""
+  try {
+    await sessionApi.remove(target.session_id)
+    deleteTarget.value = null
+    if (sessionId.value === target.session_id) newConversation()
+    await loadSessions()
+  } catch (error) {
+    deleteError.value = error instanceof Error ? error.message : "删除失败"
+  } finally {
+    deleting.value = false
+  }
 }
 
 function updateQueryStage(data: Record<string, unknown>) {
@@ -349,15 +398,24 @@ onMounted(async () => {
       <div class="px-4"><button class="primary-button w-full" @click="newConversation"><MessageSquarePlus class="size-4" />新建对话</button></div>
       <div class="mt-7 flex-1 overflow-y-auto px-3">
         <p class="px-2 text-[11px] font-semibold tracking-wider text-slate-400">最近对话</p>
-        <button
-          v-for="session in sessions"
-          :key="session.session_id"
-          :class="['session-item', sessionId === session.session_id && 'active']"
-          @click="openSession(session.session_id)"
-        >
-          <span class="truncate font-medium">{{ session.title }}</span>
-          <span class="truncate text-xs text-slate-400">{{ session.last_message }}</span>
-        </button>
+        <div v-for="session in sessions" :key="session.session_id" class="session-item-wrap">
+          <button
+            :class="['session-item', sessionId === session.session_id && 'active']"
+            @click="openSession(session.session_id)"
+          >
+            <span class="truncate font-medium">{{ session.title }}</span>
+            <span class="truncate text-xs text-slate-400">{{ session.last_message }}</span>
+          </button>
+          <button
+            class="session-delete"
+            title="删除对话"
+            aria-label="删除对话"
+            :disabled="querying && sessionId === session.session_id"
+            @click.stop="requestDelete(session)"
+          >
+            <Trash2 class="size-3.5" />
+          </button>
+        </div>
         <p v-if="!sessions.length" class="px-2 py-8 text-center text-xs text-slate-400">还没有历史会话</p>
       </div>
       <div class="border-t border-slate-200 p-4">
@@ -387,8 +445,16 @@ onMounted(async () => {
             <article v-for="message in messages" :key="message.message_id" :class="['message-row', message.role]">
               <div v-if="message.role === 'assistant'" class="avatar"><Bot class="size-4" /></div>
               <div :class="['message-bubble', message.role]">
-                <div v-if="message.role === 'assistant' && message.content_html && !message.pending" class="markdown-body" v-html="message.content_html"></div>
-                <div v-else class="whitespace-pre-wrap">{{ message.content }}<span v-if="message.pending" class="typing-cursor"></span></div>
+                <div v-if="message.role === 'assistant' && message.pending && !message.content" class="retrieval-status">
+                  <LoaderCircle class="size-3.5 animate-spin" />
+                  <span>{{ activeStageLabel }}…</span>
+                  <span class="retrieval-count">{{ completedStageCount }}/{{ queryStages.length }}</span>
+                </div>
+                <div v-else-if="message.role === 'assistant' && message.content_html && !message.pending" class="markdown-body" v-html="message.content_html"></div>
+                <div v-else-if="message.content" class="whitespace-pre-wrap">{{ message.content }}<span v-if="message.pending" class="typing-cursor"></span></div>
+              </div>
+              <div v-if="message.role === 'user'" class="avatar user-avatar" aria-label="用户">
+                <CircleUserRound class="size-4" />
               </div>
             </article>
             <p v-if="queryError" class="mx-auto max-w-2xl rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{{ queryError }}</p>
@@ -474,6 +540,27 @@ onMounted(async () => {
           <p v-if="importError" class="error-text">{{ importError }}</p>
           <button v-if="!importing" class="secondary-button w-full justify-center" @click="importTask = null; importTab = 'upload'; importError = ''">继续导入</button>
         </template>
+      </section>
+    </div>
+
+    <div v-if="deleteTarget" class="modal-backdrop" @click.self="cancelDelete">
+      <section class="modal-card">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="eyebrow">DELETE CONVERSATION</p>
+            <h2>删除这个对话？</h2>
+            <p>“{{ deleteTarget.title }}”的全部消息将被永久删除，无法恢复。</p>
+          </div>
+          <button class="icon-button" aria-label="关闭" @click="cancelDelete"><X class="size-5" /></button>
+        </div>
+        <p v-if="deleteError" class="error-text mt-5">{{ deleteError }}</p>
+        <div class="mt-6 flex gap-3">
+          <button class="secondary-button flex-1 justify-center" :disabled="deleting" @click="cancelDelete">取消</button>
+          <button class="danger-button flex-1 justify-center" :disabled="deleting" @click="confirmDelete">
+            <LoaderCircle v-if="deleting" class="size-4 animate-spin" />
+            {{ deleting ? "删除中" : "删除" }}
+          </button>
+        </div>
       </section>
     </div>
   </div>

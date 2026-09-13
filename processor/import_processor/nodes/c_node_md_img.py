@@ -5,8 +5,10 @@ import logging
 import mimetypes
 import os
 import re
+import threading
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, unquote
@@ -21,7 +23,7 @@ from processor.import_processor.exceptions import (
     StateFieldError,
 )
 from processor.import_processor.state import ImportGraphState
-from utils.llm_utils import get_llm_client
+from utils.llm_utils import get_vl_client
 from utils.minio_utils import get_minio_client
 
 
@@ -280,65 +282,119 @@ class NodeMDImg(BaseNode):
         document_title: str,
         target_images: list,
     ) -> dict[Path, str]:
-        """调用视觉模型，为每张图片生成适合知识检索的说明。"""
-        client = get_llm_client(model=self.config.vl_model)
+        """并发调用视觉模型，为每张图片生成适合知识检索的说明。"""
+        concurrency = int(self.config.image_summary_concurrency)
+        if concurrency <= 0:
+            raise ImageProcessingError(
+                message="image_summary_concurrency 必须大于 0"
+            )
+        worker_count = min(concurrency, len(target_images))
+        self.logger.info(
+            "图片摘要并发执行 | images=%d | concurrency=%d | rpm=%d",
+            len(target_images),
+            worker_count,
+            int(self.config.requests_per_minute),
+        )
+
+        client = get_vl_client(model=self.config.vl_model)
         summaries: dict[Path, str] = {}
         request_times: deque[float] = deque()
+        rate_limit_lock = threading.Lock()
 
-        for index, image in enumerate(target_images):
-            image_file, image_path, context = image
-            image_path = Path(image_path)
-            previous_text, following_text = context or ("", "")
+        executor = ThreadPoolExecutor(max_workers=worker_count)
+        futures = {
+            executor.submit(
+                self._summarize_image,
+                client,
+                document_title,
+                image,
+                request_times,
+                rate_limit_lock,
+            ): image
+            for image in target_images
+        }
+        try:
+            for completed_count, future in enumerate(
+                as_completed(futures),
+                start=1,
+            ):
+                image = futures[future]
+                try:
+                    summary, image_path = future.result()
+                except ImageProcessingError:
+                    raise
+                except Exception as exc:
+                    raise ImageProcessingError(
+                        message=f"图片摘要生成失败: {image[0]}",
+                        cause=exc,
+                    ) from exc
+                summaries[image_path] = summary
+                self.logger.info(
+                    "图片摘要生成完成 (%d/%d): %s",
+                    completed_count,
+                    len(target_images),
+                    image[0],
+                )
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
 
-            mime_type = mimetypes.guess_type(image_file)[0] or "image/jpeg"
-            image_base64 = base64.b64encode(image_path.read_bytes()).decode("ascii")
-            message = HumanMessage(
-                content=[
-                    {
-                        "type": "text",
-                        "text": (
-                            f"这张图片来自文档《{document_title}》。请准确描述图片内容，"
-                            "重点提取标题、文字、数字、表格字段、部件名称及图中关系。"
-                            "输出一段适合知识库检索的中文说明，不要使用 Markdown，不要臆测。\n"
-                            f"图片上文：{previous_text or '无'}\n"
-                            f"图片下文：{following_text or '无'}"
-                        ),
+        return summaries
+
+    def _summarize_image(
+        self,
+        client,
+        document_title: str,
+        image: tuple,
+        request_times: deque[float],
+        rate_limit_lock: threading.Lock,
+    ) -> tuple[str, Path]:
+        """生成单张图片摘要；限速器由锁保证线程安全。"""
+        image_file, image_path, context = image
+        image_path = Path(image_path)
+        previous_text, following_text = context or ("", "")
+
+        mime_type = mimetypes.guess_type(image_file)[0] or "image/jpeg"
+        image_base64 = base64.b64encode(image_path.read_bytes()).decode("ascii")
+        message = HumanMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": (
+                        f"这张图片来自文档《{document_title}》。请准确描述图片内容，"
+                        "重点提取标题、文字、数字、表格字段、部件名称及图中关系。"
+                        "输出一段适合知识库检索的中文说明，不要使用 Markdown，不要臆测。\n"
+                        f"图片上文：{previous_text or '无'}\n"
+                        f"图片下文：{following_text or '无'}"
+                    ),
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{mime_type};base64,{image_base64}"
                     },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{mime_type};base64,{image_base64}"
-                        },
-                    },
-                ]
-            )
+                },
+            ]
+        )
 
+        with rate_limit_lock:
             self._wait_for_rate_limit_window(
                 request_times,
                 self.config.requests_per_minute,
             )
-            try:
-                response = client.invoke([message])
-                summary = self._response_to_text(response.content)
-            except Exception as exc:
-                raise ImageProcessingError(
-                    message=f"图片摘要生成失败: {image_file}",
-                    cause=exc,
-                ) from exc
+        try:
+            response = client.invoke([message])
+            summary = self._response_to_text(response.content)
+        except Exception as exc:
+            raise ImageProcessingError(
+                message=f"图片摘要生成失败: {image_file}",
+                cause=exc,
+            ) from exc
 
-            if not summary:
-                raise ImageProcessingError(
-                    message=f"视觉模型未返回图片摘要: {image_file}"
-                )
-            summaries[image_path] = summary
-            self.logger.info(
-                "图片摘要生成完成 (%d/%d): %s",
-                index + 1,
-                len(target_images),
-                image_file,
+        if not summary:
+            raise ImageProcessingError(
+                message=f"视觉模型未返回图片摘要: {image_file}"
             )
-
-        return summaries
+        return summary, image_path
 
     @staticmethod
     def _response_to_text(content: object) -> str:

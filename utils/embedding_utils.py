@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import httpx
@@ -8,6 +9,44 @@ from config.embedding_config import embedding_config
 
 
 SparseVector = dict[int, float]
+
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+_RETRY_BASE_DELAY_SECONDS = 0.5
+
+
+def _post_with_retries(
+    url: str,
+    *,
+    headers: dict[str, str],
+    json: dict[str, Any],
+    timeout: float,
+    max_retries: int,
+) -> httpx.Response:
+    """发送 POST 请求，仅对瞬时网络错误和可重试状态码做指数退避重试。"""
+    attempt = 0
+    while True:
+        try:
+            response = httpx.post(
+                url,
+                headers=headers,
+                json=json,
+                timeout=timeout,
+            )
+        except httpx.TransportError:
+            if attempt >= max_retries:
+                raise
+            attempt += 1
+            time.sleep(_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1)))
+            continue
+
+        if (
+            response.status_code in _RETRYABLE_STATUS_CODES
+            and attempt < max_retries
+        ):
+            attempt += 1
+            time.sleep(_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1)))
+            continue
+        return response
 
 
 class EmbeddingTool:
@@ -121,7 +160,7 @@ class EmbeddingTool:
         if not self.config.dashscope_api_key:
             raise ValueError("未配置阿里云向量 API Key，请设置 DASHSCOPE_API_KEY")
 
-        response = httpx.post(
+        response = _post_with_retries(
             self.config.dashscope_native_url,
             headers={
                 "Authorization": f"Bearer {self.config.dashscope_api_key}",
@@ -137,6 +176,10 @@ class EmbeddingTool:
                 },
             },
             timeout=self.config.request_timeout,
+            max_retries=max(
+                0,
+                int(getattr(self.config, "max_retries", 2)),
+            ),
         )
         response.raise_for_status()
         payload = response.json()

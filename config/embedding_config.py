@@ -20,6 +20,7 @@ class EmbeddingConfig:
     dashscope_model: str
     dimension: int
     request_timeout: float
+    max_retries: int
 
 
 embedding_config = EmbeddingConfig(
@@ -43,4 +44,5 @@ embedding_config = EmbeddingConfig(
     ),
     dimension=int(os.getenv("EMBEDDING_DIM", "1024")),
     request_timeout=float(os.getenv("EMBEDDING_REQUEST_TIMEOUT", "60")),
+    max_retries=int(os.getenv("EMBEDDING_MAX_RETRIES", "2")),
 )

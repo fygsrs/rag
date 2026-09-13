@@ -134,6 +134,8 @@ def make_config(**overrides):
         "milvus_url": "http://milvus.test:19530",
         "item_name_collection": "kb_item_names",
         "history_limit": 20,
+        "extract_history_messages": 8,
+        "extract_history_chars": 500,
         "item_name_top_k": 5,
         "item_name_confirm_threshold": 0.85,
         "item_name_candidate_threshold": 0.60,
@@ -407,3 +409,82 @@ def test_process_treats_missing_collection_as_infrastructure_error():
 
     with pytest.raises(RuntimeError, match="Collection"):
         node.process(make_state())
+
+
+def test_extraction_prompt_compresses_assistant_candidate_history():
+    long_answer = "很长的商品确认说明。" * 300
+    history = [
+        {
+            "role": "user",
+            "content": "HAK180 有哪些型号？",
+            "metadata": {},
+        },
+        {
+            "role": "assistant",
+            "content": long_answer,
+            "metadata": {
+                "item_name_candidates": ["HAK180 安全栅", "HAK190 安全栅"]
+            },
+        },
+    ]
+    node, _, _, _ = make_node(
+        {"item_names": [], "rewritten_query": "第二个"},
+        [],
+    )
+
+    prompt = node._build_extraction_prompt(history, "第二个", [])
+
+    assert "assistant: 商品候选：1.HAK180 安全栅、2.HAK190 安全栅" in prompt
+    assert long_answer not in prompt
+
+
+def test_extraction_prompt_renders_confirmed_assistant_names():
+    history = [
+        {
+            "role": "assistant",
+            "content": "很长的正式回答内容。" * 200,
+            "metadata": {"item_names": ["HAK180 安全栅"]},
+        }
+    ]
+    node, _, _, _ = make_node(
+        {"item_names": [], "rewritten_query": "问题"},
+        [],
+    )
+
+    prompt = node._build_extraction_prompt(history, "问题", [])
+
+    assert "assistant: 已确认商品：HAK180 安全栅" in prompt
+    assert "很长的正式回答内容。" not in prompt
+
+
+def test_extraction_prompt_keeps_only_recent_messages():
+    history = [
+        {"role": "user", "content": f"历史问题 {index}", "metadata": {}}
+        for index in range(10)
+    ]
+    node, _, _, _ = make_node(
+        {"item_names": [], "rewritten_query": "当前问题"},
+        [],
+    )
+
+    prompt = node._build_extraction_prompt(history, "当前问题", [])
+
+    assert "历史问题 0" not in prompt
+    assert "历史问题 1" not in prompt
+    assert "历史问题 2" in prompt
+    assert "历史问题 9" in prompt
+
+
+def test_extraction_prompt_truncates_long_user_message():
+    history = [
+        {"role": "user", "content": "长" * 600 + "结尾", "metadata": {}}
+    ]
+    node, _, _, _ = make_node(
+        {"item_names": [], "rewritten_query": "问题"},
+        [],
+    )
+
+    prompt = node._build_extraction_prompt(history, "问题", [])
+
+    assert "长" * 500 in prompt
+    assert "结尾" not in prompt

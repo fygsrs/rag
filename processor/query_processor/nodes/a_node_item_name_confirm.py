@@ -134,6 +134,8 @@ class NodeItemNameConfirm(NodeBase):
 
         numeric_values = {
             "QUERY_HISTORY_LIMIT": self.config.history_limit,
+            "QUERY_EXTRACT_HISTORY_MESSAGES": self.config.extract_history_messages,
+            "QUERY_EXTRACT_HISTORY_CHARS": self.config.extract_history_chars,
             "ITEM_NAME_TOP_K": self.config.item_name_top_k,
             "ITEM_NAME_CONFIRM_THRESHOLD": self.config.item_name_confirm_threshold,
             "ITEM_NAME_CANDIDATE_THRESHOLD": (
@@ -154,7 +156,12 @@ class NodeItemNameConfirm(NodeBase):
         if len(numbers) != len(numeric_values):
             raise RuntimeError("查询数值配置不能使用布尔值")
 
-        for name in ("QUERY_HISTORY_LIMIT", "ITEM_NAME_TOP_K"):
+        for name in (
+            "QUERY_HISTORY_LIMIT",
+            "QUERY_EXTRACT_HISTORY_MESSAGES",
+            "QUERY_EXTRACT_HISTORY_CHARS",
+            "ITEM_NAME_TOP_K",
+        ):
             value = numbers[name]
             if value <= 0 or not value.is_integer():
                 raise RuntimeError(f"{name} 必须是正整数")
@@ -245,27 +252,68 @@ class NodeItemNameConfirm(NodeBase):
 
         return self._parse_extraction(self._response_to_text(response))
 
-    @staticmethod
+    def _compress_history(
+        self,
+        history: list[dict[str, Any]],
+    ) -> list[str]:
+        """压缩历史消息，保留商品候选和已确认商品等关键信息。
+
+        assistant 消息优先用结构化元数据替代整段回答：候选列表按原编号
+        渲染，支持用户以序号回复；其余消息按配置截断字符数。
+        """
+        max_messages = max(1, int(self.config.extract_history_messages))
+        max_chars = max(1, int(self.config.extract_history_chars))
+        history_lines: list[str] = []
+        for memory in history[-max_messages:]:
+            if not isinstance(memory, dict):
+                continue
+            role = str(memory.get("role") or "unknown")
+            content = str(memory.get("content") or "").strip()
+            metadata = (
+                memory.get("metadata")
+                if isinstance(memory.get("metadata"), dict)
+                else {}
+            )
+            known_names = [
+                str(name).strip()
+                for name in (metadata.get("item_names") or [])
+                if str(name).strip()
+            ]
+            if role == "assistant":
+                candidates = [
+                    str(name).strip()
+                    for name in (metadata.get("item_name_candidates") or [])
+                    if str(name).strip()
+                ]
+                if candidates:
+                    options = "、".join(
+                        f"{index}.{name}"
+                        for index, name in enumerate(candidates, start=1)
+                    )
+                    history_lines.append(f"assistant: 商品候选：{options}")
+                    continue
+                if known_names:
+                    history_lines.append(
+                        f"assistant: 已确认商品：{'、'.join(known_names)}"
+                    )
+                    continue
+            if not content:
+                continue
+            suffix = (
+                f"（已确认商品：{'、'.join(known_names)}）"
+                if known_names
+                else ""
+            )
+            history_lines.append(f"{role}: {content[:max_chars]}{suffix}")
+        return history_lines
+
     def _build_extraction_prompt(
+        self,
         history: list[dict[str, Any]],
         original_query: str,
         state_item_names: list[str],
     ) -> str:
-        history_lines = []
-        for memory in history:
-            role = str(memory.get("role") or "unknown")
-            content = str(memory.get("content") or "").strip()
-            metadata = memory.get("metadata")
-            known_names = (
-                metadata.get("item_names", [])
-                if isinstance(metadata, dict)
-                else []
-            )
-            suffix = f"（已确认商品：{'、'.join(known_names)}）" if known_names else ""
-            if content:
-                history_lines.append(f"{role}: {content}{suffix}")
-
-        history_text = "\n".join(history_lines) or "（无历史会话）"
+        history_text = "\n".join(self._compress_history(history)) or "（无历史会话）"
         state_names_text = "、".join(
             name.strip()
             for name in state_item_names

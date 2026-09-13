@@ -14,6 +14,18 @@ from processor.query_processor.nodes.d_node_web_search_mcp import (
 from processor.query_processor.state import create_default_query_state
 
 
+class FakeMongoDBUtil:
+    def __init__(self):
+        self.saved = []
+
+    def save_memory(self, *, session_id, role, content, message_id="", metadata=None):
+        self.saved.append((session_id, message_id, role))
+        return "memory-id"
+
+    def get_memories(self, session_id, *, limit=20):
+        return []
+
+
 class TestKBQueryWorkflow:
     @staticmethod
     def _stub_item_name_confirm(self, state):
@@ -52,7 +64,15 @@ class TestKBQueryWorkflow:
             "process",
             self._stub_item_name_confirm,
         )
-        state = create_default_query_state(original_query="如何调整转印温度？")
+        monkeypatch.setattr(
+            "processor.query_processor.nodes.g_node_answer_output.get_mongodb_util",
+            lambda: FakeMongoDBUtil(),
+        )
+        state = create_default_query_state(
+            original_query="如何调整转印温度？",
+            session_id="session-1",
+            message_id="message-1",
+        )
 
         result = KBQueryWorkflow().run(state)
 
@@ -64,7 +84,7 @@ class TestKBQueryWorkflow:
         assert result["web_search_docs"] == []
         assert result["rrf_chunks"] == []
         assert result["reranked_docs"] == []
-        assert result["answer"] == ""
+        assert result["answer"] == "未找到足够的相关资料"
 
     def test_existing_answer_skips_retrieval_route(self, monkeypatch):
         self._stub_search_nodes(monkeypatch)

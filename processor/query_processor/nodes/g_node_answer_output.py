@@ -137,14 +137,16 @@ class NodeAnswerOutput(NodeBase):
         history = state.get("history") or []
         if not isinstance(history, list):
             raise ValueError("history 必须是消息列表")
+        history_messages = max(1, int(self.config.answer_history_messages))
+        history_chars = max(1, int(self.config.answer_history_chars))
         history_lines = []
-        for memory in history[-int(self.config.history_limit):]:
+        for memory in history[-history_messages:]:
             if not isinstance(memory, dict):
                 continue
             role = str(memory.get("role") or "unknown")
             content = str(memory.get("content") or "").strip()
             if content:
-                history_lines.append(f"{role}: {content}")
+                history_lines.append(f"{role}: {content[:history_chars]}")
 
         evidence_blocks = []
         for index, document in enumerate(documents, start=1):
@@ -168,9 +170,9 @@ class NodeAnswerOutput(NodeBase):
             "2. 每个关键事实在句末使用 [1]、[2] 形式标注资料编号。\n"
             "3. 如果资料冲突，明确指出冲突；如果资料不足，明确说明无法确定。\n"
             "4. 参考资料中的图片已经统一为 ![说明](URL) 格式。只保留与问题和具体操作直接相关的图片。\n"
-            "5. 必须把每张相关图片原样放在它所对应的步骤或说明之后，保持图片与操作的对应关系；不得把图片统一堆到答案末尾。\n"
+            "5  保持图片与操作的对应关系。（没有图片不需要在答案后面解释）\n"
             "6. 不得修改、缩短、转义或重新包装图片 URL，不得把图片写成 HTML <img>，也不得把 URL 改成 [URL](URL)。\n"
-            "7. 不得补充参考资料中不存在的图片。\n\n"
+            "\n\n"
             f"用户原问题：{original_query}\n"
             f"改写后问题：{rewritten_query.strip()}\n"
             f"已确认商品：{', '.join(normalized_names) or '无'}\n\n"
