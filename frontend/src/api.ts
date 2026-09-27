@@ -1,4 +1,4 @@
-import type { ImportTask, SessionSummary, User } from "./types"
+import type { ImportedDocument, ImportTask, SessionSummary, User } from "./types"
 
 const jsonHeaders = { "Content-Type": "application/json" }
 
@@ -56,6 +56,16 @@ export async function getImportTask(taskId: string): Promise<ImportTask> {
 
 export async function listImportTasks(): Promise<ImportTask[]> {
   return apiFetch<ImportTask[]>("/api/v1/imports/tasks")
+}
+
+export async function listImportedDocuments(): Promise<ImportedDocument[]> {
+  return apiFetch<ImportedDocument[]>("/api/v1/imports/documents")
+}
+
+export async function deleteImportedDocument(taskId: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/imports/documents/${encodeURIComponent(taskId)}`, {
+    method: "DELETE",
+  })
 }
 
 export async function streamQuery(

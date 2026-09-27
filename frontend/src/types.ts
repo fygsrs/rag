@@ -52,4 +52,14 @@ export interface ImportTask {
   revision: number
   created_at?: string
   updated_at?: string
+  document_deleted_at?: string
+}
+
+export interface ImportedDocument {
+  task_id: string
+  file_name: string
+  file_title: string
+  item_name: string
+  chunk_count: number
+  imported_at?: string
 }

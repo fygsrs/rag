@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from config.embedding_config import embedding_config
+from utils.http_client import get_http_client
 
 
 SparseVector = dict[int, float]
@@ -15,6 +16,7 @@ _RETRY_BASE_DELAY_SECONDS = 0.5
 
 
 def _post_with_retries(
+    client,
     url: str,
     *,
     headers: dict[str, str],
@@ -26,7 +28,7 @@ def _post_with_retries(
     attempt = 0
     while True:
         try:
-            response = httpx.post(
+            response = client.post(
                 url,
                 headers=headers,
                 json=json,
@@ -56,9 +58,10 @@ class EmbeddingTool:
     DashScope 原生接口，因为 OpenAI 兼容接口只返回稠密向量。
     """
 
-    def __init__(self, config=None):
+    def __init__(self, config=None, *, http_client=None):
         self.config = config or embedding_config
         self._bge_model: Any = None
+        self._http_client = http_client
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """对文档列表生成稠密向量。"""
@@ -161,6 +164,7 @@ class EmbeddingTool:
             raise ValueError("未配置阿里云向量 API Key，请设置 DASHSCOPE_API_KEY")
 
         response = _post_with_retries(
+            self._http_client or get_http_client(),
             self.config.dashscope_native_url,
             headers={
                 "Authorization": f"Bearer {self.config.dashscope_api_key}",

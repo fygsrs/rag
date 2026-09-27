@@ -172,3 +172,24 @@ def test_rerank_keeps_at_most_ten_results_without_cliff():
     )
 
     assert len(result["reranked_docs"]) == 10
+
+
+def test_fast_mode_skips_rerank_request_and_preserves_search_order():
+    http_client = FakeHttpClient([0.1, 0.9])
+    node = NodeRerank(make_config(), http_client=http_client)
+    documents = [
+        {**make_doc(1, "第一条"), "score": 0.92},
+        {**make_doc(2, "第二条"), "score": 0.81},
+    ]
+
+    result = node.process(
+        {
+            "search_mode": "fast",
+            "rewritten_query": "问题",
+            "rrf_chunks": documents,
+            "web_search_docs": [],
+        }
+    )
+
+    assert result["reranked_docs"] == documents
+    assert http_client.call is None

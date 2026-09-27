@@ -1,6 +1,7 @@
 """Markdown 图片规范化和前端摘要所需的轻量文本处理。"""
 
 import html
+import os
 import re
 
 
@@ -22,8 +23,27 @@ _MARKDOWN_LINK_PATTERN = re.compile(
 _HTTP_URL_PATTERN = re.compile(r"https?://[^\s\"'<>\]]+")
 
 
+def _rewrite_minio_image_urls(content: str) -> str:
+    """将旧 HTTP MinIO 图片地址改写到配置的 HTTPS 公网入口。"""
+    public_endpoint = os.getenv("MINIO_PUBLIC_ENDPOINT", "").strip().rstrip("/")
+    if not public_endpoint.lower().startswith("https://"):
+        return content
+
+    bucket = os.getenv("MINIO_BUCKET_NAME", "").strip().strip("/")
+    if not bucket:
+        return content
+
+    legacy_pattern = re.compile(
+        rf"http://[^/\s\"'<>]+/{re.escape(bucket)}/",
+        re.IGNORECASE,
+    )
+    return legacy_pattern.sub(f"{public_endpoint}/{bucket}/", content)
+
+
 def normalize_markdown_images(content: str) -> str:
     """把 HTML 或被模型改坏的图片标签转换成安全 Markdown 图片。"""
+
+    content = _rewrite_minio_image_urls(content or "")
 
     def replace_image(match: re.Match[str]) -> str:
         attributes = html.unescape(match.group("attributes"))
@@ -49,7 +69,7 @@ def normalize_markdown_images(content: str) -> str:
             alt_text = "资料图片"
         return f"![{alt_text[:120]}]({source})"
 
-    return _HTML_IMAGE_PATTERN.sub(replace_image, content or "")
+    return _HTML_IMAGE_PATTERN.sub(replace_image, content)
 
 
 def summarize_content(content: str, *, max_length: int = 280) -> str:

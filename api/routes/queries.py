@@ -169,11 +169,14 @@ async def stream_query(
                             "skipped" if mode == "fast" else "completed",
                             count=len(value_map.get("rrf_chunks") or []),
                         )
-                        emit_progress("rerank", "running")
+                        emit_progress(
+                            "rerank",
+                            "skipped" if mode == "fast" else "running",
+                        )
                     elif node_name == "node_rerank":
                         emit_progress(
                             "rerank",
-                            "completed",
+                            "skipped" if mode == "fast" else "completed",
                             count=len(value_map.get("reranked_docs") or []),
                         )
                         emit_progress("answer", "running")

@@ -14,6 +14,7 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Response,
     UploadFile,
     status,
 )
@@ -21,9 +22,10 @@ from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 from api.dependencies import CurrentUser
-from api.schemas import ImportResponse, ImportTaskResponse
+from api.schemas import ImportDocumentResponse, ImportResponse, ImportTaskResponse
 from api.sse import encode_sse
 from processor.import_processor.main_graph import ImportWorkflow
+from processor.import_processor.nodes.g_node_import_milvus import NodeImportMilvus
 from processor.import_processor.state import create_default_state
 from utils.import_task_utils import get_import_task_util
 
@@ -236,6 +238,61 @@ async def list_import_tasks(
         limit=limit,
     )
     return [ImportTaskResponse.model_validate(task) for task in tasks]
+
+
+@router.get(
+    "/documents",
+    response_model=list[ImportDocumentResponse],
+    summary="读取当前用户已入库的文档",
+)
+async def list_import_documents(
+    current_user: CurrentUser,
+    limit: int = Query(default=50, ge=1, le=100),
+) -> list[ImportDocumentResponse]:
+    documents = await run_in_threadpool(
+        get_import_task_util().list_documents,
+        user_id=str(current_user["id"]),
+        limit=limit,
+    )
+    return [ImportDocumentResponse.model_validate(document) for document in documents]
+
+
+@router.delete(
+    "/documents/{task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="从知识库删除已入库文档的切片",
+)
+async def delete_import_document(
+    task_id: str,
+    current_user: CurrentUser,
+) -> Response:
+    user_id = str(current_user["id"])
+    tasks = get_import_task_util()
+    task = await run_in_threadpool(tasks.get, task_id=task_id, user_id=user_id)
+    if task is None or task.get("status") != "succeeded":
+        raise HTTPException(status_code=404, detail="已入库文档不存在")
+    if task.get("document_deleted_at") is not None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    result = task.get("result")
+    file_title = (
+        str(result.get("file_title") or "").strip()
+        if isinstance(result, dict)
+        else ""
+    )
+    if not file_title:
+        raise HTTPException(status_code=409, detail="导入记录缺少文档标题，无法删除")
+
+    await run_in_threadpool(NodeImportMilvus().delete_document_chunks, file_title)
+    marked = await run_in_threadpool(
+        tasks.mark_document_deleted,
+        task_id=task_id,
+        user_id=user_id,
+        file_title=file_title,
+    )
+    if not marked:
+        raise HTTPException(status_code=409, detail="文档切片已删除，但历史状态更新失败")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

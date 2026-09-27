@@ -88,11 +88,16 @@ class ImportConfig:
         """从环境变量加载配置"""
         return cls()
 
-    # 图片 URL 优先使用对外地址，未配置时回退内网地址
-    def get_minio_base_url(self):
+    # 图片 URL 优先使用对外地址，未配置时回退内网地址。
+    # 对外地址允许直接携带协议，避免 HTTPS 站点生成 HTTP 图片链接。
+    def get_minio_base_url(self) -> str:
+        endpoint = (
+            self.minio_public_endpoint.strip() or self.minio_endpoint.strip()
+        ).rstrip("/")
+        if endpoint.lower().startswith(("http://", "https://")):
+            return endpoint
         base_protocol = "https://" if self.minio_secure else "http://"
-        endpoint = self.minio_public_endpoint.strip() or self.minio_endpoint
-        return base_protocol + f"{endpoint}"
+        return f"{base_protocol}{endpoint}"
 
 
 # ==================== 全局单例 ====================

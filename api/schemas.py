@@ -33,6 +33,16 @@ class ImportTaskResponse(StrictModel):
     revision: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    document_deleted_at: datetime | None = None
+
+
+class ImportDocumentResponse(StrictModel):
+    task_id: str
+    file_name: str
+    file_title: str
+    item_name: str = ""
+    chunk_count: int = Field(ge=0)
+    imported_at: datetime | None = None
 
 
 class LoginRequest(StrictModel):

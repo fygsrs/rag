@@ -51,9 +51,9 @@ def make_config():
     return SimpleNamespace(
         milvus_url="http://milvus.test:19530",
         chunks_collection="kb_chunks_test",
-        search_top_k=5,
-        search_dense_weight=0.8,
-        search_sparse_weight=0.2,
+        search_top_k=8,
+        search_dense_weight=0.7,
+        search_sparse_weight=0.3,
         hyde_model="query-model",
     )
 
@@ -92,8 +92,10 @@ def test_embedding_node_runs_filtered_dense_sparse_search():
 
     assert embedding.calls == [(["HAK180 安全栅如何调整转印温度？"], "query")]
     assert milvus.search_kwargs["collection_name"] == "kb_chunks_test"
-    assert milvus.search_kwargs["limit"] == 5
+    assert milvus.search_kwargs["limit"] == 8
     assert len(milvus.search_kwargs["reqs"]) == 2
+    assert all(request._limit == 8 for request in milvus.search_kwargs["reqs"])
+    assert milvus.search_kwargs["ranker"]._weights == [0.7, 0.3]
     assert milvus.search_kwargs["reqs"][0]._expr == (
         'item_name in ["HAK180 安全栅"]'
     )
@@ -157,7 +159,8 @@ def test_hyde_node_generates_document_and_searches_combined_text():
             "query",
         )
     ]
-    assert milvus.search_kwargs["limit"] == 5
+    assert milvus.search_kwargs["limit"] == 8
+    assert milvus.search_kwargs["ranker"]._weights == [0.7, 0.3]
 
 
 def test_hyde_node_propagates_llm_error():

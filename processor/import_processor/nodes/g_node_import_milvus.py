@@ -43,6 +43,28 @@ class NodeImportMilvus(BaseNode):
         # 5. 更新工作流状态
         return self._step_5_update_state(state, updated_chunks)
 
+    def delete_document_chunks(self, file_title: str) -> int:
+        """删除一个文档的正文切片，不删除导入文件或商品名称记录。"""
+        normalized_title = file_title.strip()
+        if not normalized_title:
+            raise ValueError("file_title 不能为空")
+        if not self.config.chunks_collection:
+            raise MilvusError(
+                message="未配置 CHUNKS_COLLECTION",
+                node_name=self.name,
+            )
+        client = self._get_milvus_client()
+        try:
+            if not client.has_collection(self.config.chunks_collection):
+                return 0
+        except Exception as exc:
+            raise MilvusError(
+                message=f"检查正文 Collection 失败: {self.config.chunks_collection}",
+                node_name=self.name,
+                cause=exc,
+            ) from exc
+        return self._step_3_clean_old_data(client, normalized_title)
+
     def _step_1_check_input(
         self,
         state: ImportGraphState,
@@ -170,7 +192,7 @@ class NodeImportMilvus(BaseNode):
             ) from exc
         return client
 
-    def _step_3_clean_old_data(self, client, file_title: str) -> None:
+    def _step_3_clean_old_data(self, client, file_title: str) -> int:
         """删除相同 file_title 的旧切片。"""
         try:
             result = client.delete(
@@ -186,6 +208,7 @@ class NodeImportMilvus(BaseNode):
 
         delete_count = result.get("delete_count", 0) if isinstance(result, dict) else 0
         self.logger.info("已清理文档 %s 的 %d 条旧切片", file_title, delete_count)
+        return int(delete_count)
 
     def _step_4_insert_data(
         self,

@@ -1,5 +1,6 @@
 """RAG 服务的 FastAPI 应用入口。"""
 
+from contextlib import asynccontextmanager
 import os
 
 from fastapi import FastAPI
@@ -10,6 +11,14 @@ from api.routes.auth import router as auth_router
 from api.routes.imports import router as import_router
 from api.routes.queries import router as query_router
 from api.routes.sessions import router as session_router
+from utils.http_client import close_http_client
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Release process-wide provider connections on shutdown."""
+    yield
+    close_http_client()
 
 
 def create_app() -> FastAPI:
@@ -18,6 +27,7 @@ def create_app() -> FastAPI:
         title="RAG Knowledge Base API",
         description="文档导入、知识库查询与流式回答接口",
         version="0.1.0",
+        lifespan=lifespan,
     )
 
     origins = [

@@ -111,10 +111,14 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .import-history-item:hover { border-color: #bfdbfe; background: #f8fbff; }
 .import-history-item strong { display: block; overflow: hidden; color: #334155; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .import-history-item small { display: block; margin-top: 4px; color: #94a3b8; font-size: 10px; }
+.imported-document-item { text-align: left; }
+.document-delete-button { display: grid; flex: 0 0 auto; place-items: center; width: 32px; height: 32px; border-radius: 9px; color: #94a3b8; }
+.document-delete-button:hover { color: #dc2626; background: #fef2f2; }
 .task-status { flex: 0 0 auto; border-radius: 999px; padding: 4px 7px; color: #64748b; background: #f1f5f9; font-size: 10px; font-weight: 700; }
 .task-status.running,.task-status.queued { color: #1d4ed8; background: #eff6ff; }
 .task-status.succeeded { color: #047857; background: #ecfdf5; }
 .task-status.failed { color: #b91c1c; background: #fef2f2; }
+.task-status.deleted { color: #64748b; background: #f1f5f9; }
 
 @media (max-width: 1100px) { .content-grid { grid-template-columns: minmax(0,1fr) 300px; } .sidebar { width: 220px; flex-basis: 220px; } }
 @media (max-width: 900px) { .evidence-panel { display: none; } .sidebar { position: fixed; inset: 0 auto 0 0; width: 270px; transform: translateX(-100%); transition: transform .25s; box-shadow: 20px 0 50px rgba(15,23,42,.15); } .sidebar-open { transform: translateX(0); } }

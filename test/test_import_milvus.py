@@ -83,3 +83,24 @@ def test_import_rejects_chunk_without_dense_vector():
         node._step_1_check_input(
             {"item_name": "HAK180 安全栅", "chunks": [chunk]}
         )
+
+
+def test_delete_document_chunks_only_deletes_matching_file_title():
+    client = Mock()
+    client.has_collection.return_value = True
+    client.delete.return_value = {"delete_count": 7}
+    node = NodeImportMilvus(
+        ImportConfig(
+            chunks_collection="kb_chunks_test",
+            milvus_url="http://milvus.test:19530",
+        ),
+        milvus_client=client,
+    )
+
+    deleted = node.delete_document_chunks("HAK180 产品手册")
+
+    assert deleted == 7
+    client.delete.assert_called_once_with(
+        collection_name="kb_chunks_test",
+        filter='file_title == "HAK180 产品手册"',
+    )

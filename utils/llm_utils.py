@@ -5,6 +5,15 @@ from config.llm_config import llm_config
 _llm_client_cache: dict[tuple[str, str, bool], ChatOpenAI] = {}
 
 
+def _provider_extra_body(*, scope: str, model: str) -> dict | None:
+    """Return provider-specific request options for interactive query models."""
+    if scope == "query" and model.strip().lower().startswith("deepseek"):
+        # DeepSeek Flash enables high-effort thinking by default.  RAG query
+        # stages need low first-token latency and do not consume reasoning_content.
+        return {"thinking": {"type": "disabled"}}
+    return None
+
+
 def _get_client(
     *,
     scope: str,
@@ -28,13 +37,18 @@ def _get_client(
     if json_mode:
         model_kwargs["response_format"] = {"type": "json_object"}
 
-    client = ChatOpenAI(
-        model=model,
-        temperature=llm_config.llm_temperature,
-        base_url=base_url,
-        api_key=api_key,
-        model_kwargs=model_kwargs,
-    )
+    client_kwargs = {
+        "model": model,
+        "temperature": llm_config.llm_temperature,
+        "base_url": base_url,
+        "api_key": api_key,
+        "model_kwargs": model_kwargs,
+    }
+    extra_body = _provider_extra_body(scope=scope, model=model)
+    if extra_body is not None:
+        client_kwargs["extra_body"] = extra_body
+
+    client = ChatOpenAI(**client_kwargs)
 
     _llm_client_cache[cache_key] = client
     return client

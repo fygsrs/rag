@@ -60,14 +60,17 @@ def test_aliyun_dense_and_sparse_response_is_converted_for_milvus(monkeypatch):
             ]
         }
     }
-    post = Mock(return_value=response)
-    monkeypatch.setattr("utils.embedding_utils.httpx.post", post)
+    http_client = Mock()
+    http_client.post.return_value = response
 
-    dense, sparse = EmbeddingTool(config).embed_dense_and_sparse(["测试商品"])
+    dense, sparse = EmbeddingTool(
+        config,
+        http_client=http_client,
+    ).embed_dense_and_sparse(["测试商品"])
 
     assert dense == [[0.1, 0.2, 0.3]]
     assert sparse == [{12: 0.9, 30: 0.4}]
-    request = post.call_args.kwargs["json"]
+    request = http_client.post.call_args.kwargs["json"]
     assert request["parameters"]["output_type"] == "dense&sparse"
     assert request["parameters"]["text_type"] == "document"
 
@@ -112,12 +115,14 @@ def test_aliyun_retries_transient_transport_error(monkeypatch):
             raise httpx.ConnectError("temporary ssl eof")
         return response
 
-    monkeypatch.setattr("utils.embedding_utils.httpx.post", fake_post)
     monkeypatch.setattr("utils.embedding_utils.time.sleep", lambda seconds: None)
+    http_client = Mock()
+    http_client.post.side_effect = fake_post
 
-    dense, sparse = EmbeddingTool(make_aliyun_config()).embed_dense_and_sparse(
-        ["测试商品"]
-    )
+    dense, sparse = EmbeddingTool(
+        make_aliyun_config(),
+        http_client=http_client,
+    ).embed_dense_and_sparse(["测试商品"])
 
     assert calls["count"] == 2
     assert dense == [[0.1, 0.2, 0.3]]
@@ -131,13 +136,15 @@ def test_aliyun_gives_up_after_max_retries(monkeypatch):
         calls["count"] += 1
         raise httpx.ConnectError("temporary ssl eof")
 
-    monkeypatch.setattr("utils.embedding_utils.httpx.post", fake_post)
     monkeypatch.setattr("utils.embedding_utils.time.sleep", lambda seconds: None)
+    http_client = Mock()
+    http_client.post.side_effect = fake_post
 
     with pytest.raises(httpx.ConnectError):
-        EmbeddingTool(make_aliyun_config(max_retries=1)).embed_dense_and_sparse(
-            ["测试商品"]
-        )
+        EmbeddingTool(
+            make_aliyun_config(max_retries=1),
+            http_client=http_client,
+        ).embed_dense_and_sparse(["测试商品"])
 
     assert calls["count"] == 2
 
@@ -156,12 +163,14 @@ def test_aliyun_retries_retryable_status_code(monkeypatch):
         calls["count"] += 1
         return response
 
-    monkeypatch.setattr("utils.embedding_utils.httpx.post", fake_post)
     monkeypatch.setattr("utils.embedding_utils.time.sleep", lambda seconds: None)
+    http_client = Mock()
+    http_client.post.side_effect = fake_post
 
-    dense, _ = EmbeddingTool(make_aliyun_config()).embed_dense_and_sparse(
-        ["测试商品"]
-    )
+    dense, _ = EmbeddingTool(
+        make_aliyun_config(),
+        http_client=http_client,
+    ).embed_dense_and_sparse(["测试商品"])
 
     assert calls["count"] == 2
     assert dense == [[0.1, 0.2, 0.3]]

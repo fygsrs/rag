@@ -21,8 +21,25 @@ import {
   Trash2,
   X,
 } from "lucide-vue-next"
-import { authApi, createImportTask, getImportTask, listImportTasks, sessionApi, streamQuery } from "./api"
-import type { ChatMessage, ImportTask, ProgressStage, SessionSummary, Source, User } from "./types"
+import {
+  authApi,
+  createImportTask,
+  deleteImportedDocument,
+  getImportTask,
+  listImportedDocuments,
+  listImportTasks,
+  sessionApi,
+  streamQuery,
+} from "./api"
+import type {
+  ChatMessage,
+  ImportedDocument,
+  ImportTask,
+  ProgressStage,
+  SessionSummary,
+  Source,
+  User,
+} from "./types"
 
 const user = ref<User | null>(null)
 const booting = ref(true)
@@ -48,9 +65,13 @@ const deleteError = ref("")
 const importOpen = ref(false)
 const importTask = ref<ImportTask | null>(null)
 const importTasks = ref<ImportTask[]>([])
-const importTab = ref<"upload" | "history">("upload")
+const importedDocuments = ref<ImportedDocument[]>([])
+const importTab = ref<"upload" | "documents" | "history">("upload")
 const importing = ref(false)
 const importError = ref("")
+const documentDeleteTarget = ref<ImportedDocument | null>(null)
+const deletingDocument = ref(false)
+const documentDeleteError = ref("")
 const fileInput = ref<HTMLInputElement | null>(null)
 const messageList = ref<HTMLElement | null>(null)
 let importEventSource: EventSource | null = null
@@ -267,6 +288,7 @@ function subscribeImport(taskId: string, afterRevision = 0) {
     localStorage.removeItem("activeImportTaskId")
     eventSource.close()
     importEventSource = null
+    void refreshImportedDocuments()
   })
   eventSource.onerror = () => {
     eventSource.close()
@@ -296,14 +318,24 @@ async function uploadDocument() {
   }
 }
 
-async function openImportModal(tab: "upload" | "history" = "upload") {
+async function refreshImportedDocuments() {
+  try {
+    importedDocuments.value = await listImportedDocuments()
+  } catch (error) {
+    importError.value = error instanceof Error ? error.message : "已入库文档加载失败"
+  }
+}
+
+async function openImportModal(tab: "upload" | "documents" | "history" = "upload") {
   importOpen.value = true
   importTab.value = tab
   importError.value = ""
   try {
-    importTasks.value = await listImportTasks()
+    const [tasks, documents] = await Promise.all([listImportTasks(), listImportedDocuments()])
+    importTasks.value = tasks
+    importedDocuments.value = documents
   } catch (error) {
-    importError.value = error instanceof Error ? error.message : "导入历史加载失败"
+    importError.value = error instanceof Error ? error.message : "导入数据加载失败"
   }
 }
 
@@ -320,6 +352,35 @@ function showImportHistory() {
   importTask.value = null
   importing.value = false
   importTab.value = "history"
+}
+
+function requestDocumentDelete(document: ImportedDocument) {
+  documentDeleteTarget.value = document
+  documentDeleteError.value = ""
+}
+
+function cancelDocumentDelete() {
+  if (deletingDocument.value) return
+  documentDeleteTarget.value = null
+  documentDeleteError.value = ""
+}
+
+async function confirmDocumentDelete() {
+  const target = documentDeleteTarget.value
+  if (!target || deletingDocument.value) return
+  deletingDocument.value = true
+  documentDeleteError.value = ""
+  try {
+    await deleteImportedDocument(target.task_id)
+    const [tasks, documents] = await Promise.all([listImportTasks(), listImportedDocuments()])
+    importTasks.value = tasks
+    importedDocuments.value = documents
+    documentDeleteTarget.value = null
+  } catch (error) {
+    documentDeleteError.value = error instanceof Error ? error.message : "删除文档失败"
+  } finally {
+    deletingDocument.value = false
+  }
 }
 
 function statusText(status: ImportTask["status"]) {
@@ -518,6 +579,7 @@ onMounted(async () => {
         <div class="flex items-start justify-between"><div><p class="eyebrow">KNOWLEDGE IMPORT</p><h2>导入知识文档</h2><p>支持 PDF、Markdown，关闭窗口不会中断后台任务。</p></div><button class="icon-button" @click="importOpen = false"><X class="size-5" /></button></div>
         <div v-if="!importTask" class="import-tabs">
           <button :class="importTab === 'upload' && 'active'" @click="importTab = 'upload'">上传文档</button>
+          <button :class="importTab === 'documents' && 'active'" @click="importTab = 'documents'">已入库（{{ importedDocuments.length }}）</button>
           <button :class="importTab === 'history' && 'active'" @click="importTab = 'history'">导入历史（{{ importTasks.length }}）</button>
         </div>
         <template v-if="!importTask">
@@ -526,12 +588,29 @@ onMounted(async () => {
             <p v-if="importError" class="error-text">{{ importError }}</p>
             <button class="primary-button w-full" @click="uploadDocument">开始导入</button>
           </template>
+          <template v-else-if="importTab === 'documents'">
+            <div class="import-history">
+              <div v-for="document in importedDocuments" :key="document.task_id" class="import-history-item imported-document-item">
+                <Database class="size-5 shrink-0 text-emerald-600" />
+                <span class="min-w-0 flex-1">
+                  <strong>{{ document.file_title }}</strong>
+                  <small>{{ document.item_name || document.file_name }} · {{ document.chunk_count }} 个切片 · {{ formatDate(document.imported_at) }}</small>
+                </span>
+                <button class="document-delete-button" title="从知识库删除" aria-label="从知识库删除" @click="requestDocumentDelete(document)">
+                  <Trash2 class="size-4" />
+                </button>
+              </div>
+              <div v-if="!importedDocuments.length" class="panel-empty"><Database class="size-7" /><p>知识库中还没有已导入文档</p></div>
+            </div>
+            <p v-if="importError" class="error-text">{{ importError }}</p>
+          </template>
           <template v-else>
             <div class="import-history">
               <button v-for="task in importTasks" :key="task.task_id" class="import-history-item" @click="showImportTask(task)">
                 <FileText class="size-5 shrink-0 text-blue-500" />
                 <span class="min-w-0 flex-1 text-left"><strong>{{ task.file_name }}</strong><small>{{ formatDate(task.created_at) }} · {{ task.progress }}%</small></span>
-                <span :class="['task-status', task.status]">{{ statusText(task.status) }}</span>
+                <span v-if="task.document_deleted_at" class="task-status deleted">已删除</span>
+                <span v-else :class="['task-status', task.status]">{{ statusText(task.status) }}</span>
               </button>
               <div v-if="!importTasks.length" class="panel-empty"><FileText class="size-7" /><p>当前用户还没有导入记录</p></div>
             </div>
@@ -544,11 +623,33 @@ onMounted(async () => {
           <div class="my-6 space-y-3">
             <div v-for="stage in importTask.stages" :key="stage.key" class="stage-row text-sm"><span :class="['stage-dot', stage.status]"><LoaderCircle v-if="stage.status === 'running'" class="size-3 animate-spin" /><Check v-else-if="stage.status === 'completed'" class="size-3" /></span><span>{{ stage.label }}</span><span class="ml-auto text-xs text-slate-400">{{ stage.status === 'completed' ? '完成' : stage.status === 'running' ? '处理中' : stage.status === 'skipped' ? '跳过' : '等待' }}</span></div>
           </div>
-          <p v-if="importTask.status === 'succeeded'" class="success-text">文档已成功写入知识库，共 {{ importTask.result?.chunk_count || 0 }} 个切片。</p>
+          <p v-if="importTask.document_deleted_at" class="error-text">该文档已从知识库删除，导入历史和生成文件仍保留。</p>
+          <p v-else-if="importTask.status === 'succeeded'" class="success-text">文档已成功写入知识库，共 {{ importTask.result?.chunk_count || 0 }} 个切片。</p>
           <p v-if="importTask.status === 'failed'" class="error-text">{{ importTask.error || "导入失败" }}</p>
           <p v-if="importError" class="error-text">{{ importError }}</p>
           <button v-if="!importing" class="secondary-button w-full justify-center" @click="importTask = null; importTab = 'upload'; importError = ''">继续导入</button>
         </template>
+      </section>
+    </div>
+
+    <div v-if="documentDeleteTarget" class="modal-backdrop" @click.self="cancelDocumentDelete">
+      <section class="modal-card">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="eyebrow">DELETE KNOWLEDGE DOCUMENT</p>
+            <h2>从知识库删除这份文档？</h2>
+            <p>“{{ documentDeleteTarget.file_title }}”的知识切片将被删除，之后不会再参与检索。导入历史和生成文件会保留。</p>
+          </div>
+          <button class="icon-button" aria-label="关闭" @click="cancelDocumentDelete"><X class="size-5" /></button>
+        </div>
+        <p v-if="documentDeleteError" class="error-text mt-5">{{ documentDeleteError }}</p>
+        <div class="mt-6 flex gap-3">
+          <button class="secondary-button flex-1 justify-center" :disabled="deletingDocument" @click="cancelDocumentDelete">取消</button>
+          <button class="danger-button flex-1 justify-center" :disabled="deletingDocument" @click="confirmDocumentDelete">
+            <LoaderCircle v-if="deletingDocument" class="size-4 animate-spin" />
+            {{ deletingDocument ? "正在删除" : "删除知识切片" }}
+          </button>
+        </div>
       </section>
     </div>
 

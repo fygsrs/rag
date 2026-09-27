@@ -77,13 +77,13 @@ class QueryConfig:
         default_factory=lambda: os.getenv("CHUNKS_COLLECTION", "")
     )
     search_top_k: int = field(
-        default_factory=lambda: int(os.getenv("QUERY_SEARCH_TOP_K", "5"))
+        default_factory=lambda: int(os.getenv("QUERY_SEARCH_TOP_K", "8"))
     )
     search_dense_weight: float = field(
-        default_factory=lambda: float(os.getenv("QUERY_SEARCH_DENSE_WEIGHT", "0.8"))
+        default_factory=lambda: float(os.getenv("QUERY_SEARCH_DENSE_WEIGHT", "0.7"))
     )
     search_sparse_weight: float = field(
-        default_factory=lambda: float(os.getenv("QUERY_SEARCH_SPARSE_WEIGHT", "0.2"))
+        default_factory=lambda: float(os.getenv("QUERY_SEARCH_SPARSE_WEIGHT", "0.3"))
     )
     dashscope_api_key: str = field(
         default_factory=lambda: os.getenv("DASHSCOPE_API_KEY", "")

@@ -5,11 +5,10 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-import httpx
-
 from processor.query_processor.base import NodeBase
 from processor.query_processor.config import QueryConfig
 from processor.query_processor.state import QueryGraphState
+from utils.http_client import get_http_client
 
 
 class NodeRerank(NodeBase):
@@ -25,7 +24,7 @@ class NodeRerank(NodeBase):
     ) -> None:
         super().__init__()
         self.config = config or QueryConfig()
-        self._http_client = http_client or httpx
+        self._http_client = http_client or get_http_client()
 
     def process(self, state: QueryGraphState) -> QueryGraphState:
         query = state.get("rewritten_query")
@@ -39,6 +38,15 @@ class NodeRerank(NodeBase):
         if not documents:
             self.logger.info("精排跳过 | reason=no_documents")
             return {"reranked_docs": []}
+
+        if state.get("search_mode") == "fast":
+            limit = min(int(self.config.rerank_max_results), len(documents))
+            self.logger.info(
+                "快速模式跳过精排 | input=%d | output=%d",
+                len(documents),
+                limit,
+            )
+            return {"reranked_docs": documents[:limit]}
 
         scores = self._rerank_documents(
             query.strip(),
